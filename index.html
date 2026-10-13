@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}</script>
+<title>Project Overlord — Tactical Simulator Architecture</title>
+<style>
+:root{--bg:#0b0f14;--panel:#121922;--line:#223042;--txt:#d7e1ec;--mut:#8fa0b5;--acc:#ffb454;--grn:#4ade80;--blu:#60a5fa}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55}
+header{position:sticky;top:0;z-index:10;background:rgba(11,15,20,.95);border-bottom:1px solid var(--line);backdrop-filter:blur(6px)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 18px}
+.nav{display:flex;gap:14px;align-items:center;padding:12px 18px;max-width:1080px;margin:0 auto;flex-wrap:wrap}
+.nav b{letter-spacing:.12em}.nav a{color:var(--mut);text-decoration:none;font-size:14px}.nav a:hover{color:var(--txt)}
+.hero{padding:44px 0 22px;border-bottom:1px solid var(--line);background:radial-gradient(700px 260px at 20% 0%,#1b2a3d,transparent),radial-gradient(600px 240px at 90% 10%,#2a2113,transparent)}
+.hero h1{font-size:clamp(30px,5vw,52px);margin:.1em 0;line-height:1.05}.hero h1 span{color:var(--acc)}
+.badges{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.badges span{border:1px solid var(--line);background:var(--panel);padding:4px 10px;border-radius:999px;font-size:12px;color:var(--mut)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:820px){.grid2{grid-template-columns:1fr}}
+section{padding:30px 0;border-bottom:1px solid var(--line)}h2{font-size:26px;margin:.2em 0}h3{margin:1.2em 0 .4em;color:var(--acc);font-size:17px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+pre{background:#080c11;border:1px solid var(--line);border-radius:10px;padding:14px;overflow:auto;font-size:12.5px;line-height:1.5;color:#c9d6e6;max-height:420px}
+code{font-family:ui-monospace,Consolas,Menlo,monospace}table{width:100%;border-collapse:collapse;font-size:14px}th,td{border:1px solid var(--line);padding:8px;text-align:left}th{background:#0e141d;color:var(--acc)}
+button,.btn{background:var(--acc);color:#1a1206;border:0;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer}
+button.ghost{background:transparent;color:var(--txt);border:1px solid var(--line)}button:hover{filter:brightness(1.08)}
+input,select,textarea{background:#080c11;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:14px;width:100%}
+label{font-size:12px;color:var(--mut)}canvas{width:100%;background:#070b10;border:1px solid var(--line);border-radius:10px}
+.kv{display:flex;gap:10px;flex-wrap:wrap}.kv div{flex:1;min-width:140px}.log{background:#080c11;border:1px solid var(--line);border-radius:8px;padding:10px;min-height:88px;font-size:13px;white-space:pre-wrap}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;border:1px solid var(--line);margin:2px 4px 2px 0}.ok{color:var(--grn)}.warn{color:var(--acc)}
+footer{padding:26px 0;color:var(--mut);font-size:13px}
+.tick{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}@media(max-width:700px){.tick{grid-template-columns:1fr}}
+.tick div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center}
+.tick b{font-size:22px;color:var(--grn)}
+</style>
+</head>
+<body>
+<header><div class="nav"><b>OVERLORD</b><a href="#engine">Engine</a><a href="#sqf">SQF Parser</a><a href="#editor">Mission Editor</a><a href="#combat">Ballistics + AI</a><span style="margin-left:auto;color:var(--mut);font-size:12px">Godot 4.x C# • 8–16 km • Multiplayer</span></div></header>
+<div class="wrap">
+<div class="hero">
+<div class="badges"><span>OPEN SOURCE</span><span>TACTICAL SIM</span><span>SQF COMPAT</span><span>IN-GAME EDEN-STYLE EDITOR</span><span>C# / C++ BRIDGE</span></div>
+<h1>Project <span>Overlord</span><br>Technical Architecture</h1>
+<p style="color:var(--mut);max-width:760px">Production-ready breakdown combining modern tactical-sim graphics, ballistics, vehicle physics and netcode (Arma Reforger / Enfusion style) with an accessible in-game 3D mission editor and native legacy SQF execution alongside modern C# scripting.</p>
+<div class="tick">
+<div><b>60 Hz</b><br><span style="color:var(--mut)">Physics tick (fixed)</span></div>
+<div><b>20 Hz</b><br><span style="color:var(--mut)">Network tick + relevancy</span></div>
+<div><b>16×16 km</b><br><span style="color:var(--mut)">Streamed terrain</span></div>
+</div>
+</div>
+<section id="world">
+<h2>Live 3D Environment — Everon-style Island (ref: Arma Reforger cinematic @0:27)</h2>
+<p style="color:var(--mut);max-width:820px">Reference: <b>Arma Reforger: Modern Warfare | 4k Cinematic Gameplay</b> by Controlled Pairs Gaming (<code>0AqXRgCLMVg?t=27s</code>). Frame at 0:27 shows the classic Everon look: rolling temperate hills, dense pine/oak forest edge, patchwork farmland, French rural village (stone + pitched roofs), dirt road network, overcast-to-golden-hour light. This live WebGL scene recreates that biome at demo scale (800 m = stands in for 8–16 km streaming tiles): island heightfield, 1,300 instanced trees, Montignac-style village + church, northern airfield, hilltop FOB, sea + sunset fog. Drag to look, WASD to fly.</p>
+<div class="card">
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+<button id="camCine">Cinematic</button><button class="ghost" id="camFly">Flycam (WASD)</button><button class="ghost" id="camMap">Top-down</button>
+<span class="pill" id="wFps">— fps</span><span class="pill" id="wCount">— entities</span><span class="pill ok">Everon biome: pine/oak • farmland • village • FOB • airfield</span>
+</div>
+<canvas id="scene" width="1080" height="520" style="height:520px"></canvas>
+<p style="color:var(--mut);font-size:13px"><b>Controls:</b> drag = look • W/A/S/D = move • Q/E or R/F = down/up • Shift = fast. Cinematic = slow dolly around village (like the 0:27 drone shot). Top-down = 2D strategic view. Terrain height function <code>sampleHeight(x,z)</code> is shared with the mission-editor align-to-ground logic below.</p>
+<div class="log" id="wLog">world: initialising WebGL…</div>
+</div>
+</section>
+
+<section id="engine">
+<h2>Section 1 — Game Engine Core Architecture</h2>
+<h3>1.1 Recommended stack: Godot 4.x (C#) — open source, high entity count</h3>
+<div class="grid2">
+<div class="card"><b>Why Godot 4.x C#</b><br><span style="color:var(--mut)">MIT licensed, .NET 8, GDExtension for C++ hot paths, headless dedicated server, Web + Desktop export. Custom C++ engine is 18–24 mo overhead; Godot gives renderer + physics + multiplayer + editor docking today, with escape hatches.</span>
+<table style="margin-top:10px"><tr><th>Layer</th><th>Tech</th></tr>
+<tr><td>Render</td><td>Forward+ / clustered, SDFGI, terrain shader + virtual textures</td></tr>
+<tr><td>Physics</td><td>GodotPhysics / Jolt GDExtension, 60 Hz fixed, vehicles raycast</td></tr>
+<tr><td>Net</td><td>ENet / WebRTC, snapshot + delta, interest management</td></tr>
+<tr><td>Script</td><td>C# systems + embedded SQF VM (Sec 2) + C++ bridge</td></tr>
+<tr><td>Editor</td><td>In-game 3D flycam + 2D map (Sec 3), same scene tree</td></tr></table></div>
+<div class="card"><b>Engine loop &amp; tick split</b><br>
+<pre><code>// C# — fixed physics vs network vs render
+// Render: variable (VSync). Physics: 60Hz fixed.
+// Network: 20Hz server snapshot, 10Hz dormant.
+public override void _PhysicsProcess(double d){
+  Sim.TickPhysics(1/60.0);      // ballistics, vehicles
+  if (Net.IsServer && Net.TickDue(1/20.0))
+    Replication.BroadcastSnapshot();
+  SpatialIndex.UpdateDirty();
+}</code></pre>
+<span style="color:var(--mut)">Rule: never block render on script or net. SQF runs on worker pool with frame budget (e.g. 2 ms). Physics authoritative on server; clients predict projectiles, reconcile on snapshot.</span></div>
+</div>
+<h3>1.2 Spatial partitioning for 8–16 km terrain</h3>
+<div class="card"><span class="pill ok">Quadtree (XZ) + height chunks</span><span class="pill">512 m cells → 32×32 for 16 km</span><span class="pill">HLOD + streaming</span><span class="pill">Relevancy 1.5 km infantry / 4 km vehicles</span>
+<p style="color:var(--mut)">Terrain split into 512 m tiles with LOD0–LOD3 + impostors. Entities registered in quadtree; queries (AI perception, bullet, replication) are O(log n). Network relevancy: only replicate cells within observer radius + always replicate mission-critical (triggers, HQ). DOTS-style archetype storage for units/vehicles in C# (contiguous arrays) keeps 2k+ agents at 60 Hz.</p></div>
+</section>
+
+<section id="sqf">
+<h2>Section 2 — SQF Scripting Parser &amp; Interpreter</h2>
+<p style="color:var(--mut)">Embedded bridge: Lexer → Parser (AST) → Interpreter bound to native entity API. Async via cooperative scheduler so <code>sleep</code>/<code>spawn</code>/<code>execVM</code> never stall render.</p>
+<div class="grid2">
+<div><h3>C# starter — Lexer / Parser / Scheduler (excerpt)</h3>
+<pre><code>// SQFLexer.cs — tokenizes params, execVM, select, forEach...
+public enum Tok { Ident, Number, String, LBrace, RBrace,
+  LBracket, RBracket, LParen, RParen, Semi, Comma, Op, Eof }
+public sealed class Token { public Tok Kind; public string Text; }
+public static class SQFLexer {
+  public static List&lt;Token&gt; Tokenize(string src) {
+    var out_ = new List&lt;Token&gt;(); int i=0;
+    while(i&lt;src.Length){
+      char c=src[i];
+      if(char.IsWhiteSpace(c)){i++;continue;}
+      if(c=='/'&&i+1&lt;src.Length&&src[i+1]=='/'){
+        while(i&lt;src.Length&&src[i]!='\n')i++;continue;}
+      if(c=='"'){int j=i+1;
+        while(j&lt;src.Length&&src[j]!='"')j++;
+        out_.Add(new Token{Kind=Tok.String,
+          Text=src.Substring(i+1,j-i-1)});i=j+1;continue;}
+      if(char.IsDigit(c)||(c=='.'&&i+1&lt;src.Length
+        &&char.IsDigit(src[i+1]))){int j=i;
+        while(j&lt;src.Length&&"0123456789.".Contains(src[j]))j++;
+        out_.Add(new Token{Kind=Tok.Number,
+          Text=src.Substring(i,j-i)});i=j;continue;}
+      if(char.IsLetter(c)||c=='_'){int j=i;
+        while(j&lt;src.Length&&(char.IsLetterOrDigit(src[j])
+          ||src[j]=='_'))j++;
+        out_.Add(new Token{Kind=Tok.Ident,
+          Text=src.Substring(i,j-i)});i=j;continue;}
+      // single-char tokens + ==, !=, &amp;&amp;, ||
+      var two = i+1&lt;src.Length?src.Substring(i,2):"";
+      if(two=="=="||two=="!="||two=="&gt;="||two=="&lt;="){
+        out_.Add(new Token{Kind=Tok.Op,Text=two});i+=2;continue;}
+      Tok k = c switch{'{'=&gt;Tok.LBrace,'}'=&gt;Tok.RBrace,
+        '['=&gt;Tok.LBracket,']'=&gt;Tok.RBracket,
+        '('=&gt;Tok.LParen,')'=&gt;Tok.RParen,
+        ';'=&gt;Tok.Semi,','=&gt;Tok.Comma,_=&gt;Tok.Op};
+      out_.Add(new Token{Kind=k,Text=c.ToString()});i++;
+    }
+    out_.Add(new Token{Kind=Tok.Eof,Text=""});return out_;
+  }
+}
+
+// SQFThreadManager.cs — cooperative, frame-budgeted
+public sealed class SQFScheduler {
+  readonly Queue&lt;IEnumerator&lt;double&gt;&gt; ready = new();
+  public void Spawn(Func&lt;IEnumerator&lt;double&gt;&gt; fn)
+    =&gt; ready.Enqueue(fn());
+  public void Tick(double budgetMs=2.0){ // called per frame
+    var t0=DateTime.UtcNow;
+    int n=ready.Count;
+    for(int k=0;k&lt;n;k++){
+      var co=ready.Dequeue();
+      if(co.MoveNext()) ready.Enqueue(co); // yields sleep secs
+      if((DateTime.UtcNow-t0).TotalMilliseconds&gt;budgetMs)
+        break;
+    }
+  }
+}
+// Native bindings (map to ECS):
+// createVehicle -&gt; EntityFactory.Spawn(prefab,pos)
+// setPos/setDamage -&gt; Transform/Health components
+// createGroup+waypoint -&gt; AI blackboard + path queue</code></pre></div>
+<div><h3>Live demo — JS SQF interpreter (same grammar)</h3>
+<div class="card">
+<label>Try: <code>hint "hello"; _x = 5; player setPos [100,200,0]; if (_x &gt; 3) then { hint "big" }; vehicle = "B_MRAP_01" createVehicle [0,0,0]</code></label>
+<textarea id="sqfIn" rows="6">hint "Overlord ready";
+_x = 42;
+player setPos [120, 340, 0];
+if (_x > 3) then { hint "x is big" };
+veh = "B_MRAP_01" createVehicle [100, 200, 0];
+veh setDamage 0.25;</textarea>
+<div style="display:flex;gap:8px;margin:8px 0"><button id="sqfRun">Run SQF</button><button class="ghost" id="sqfAsync">spawn async demo</button></div>
+<div class="log" id="sqfOut">— output —</div>
+<p style="color:var(--mut);font-size:13px">Thread manager: <code>spawn</code>/<code>sleep</code> yield without blocking render (see console timing). Parser handles <code>params, execVM, spawn, select, forEach, addAction, if/then</code>.</p>
+</div></div>
+</div>
+</section>
+
+<section id="editor">
+<h2>Section 3 — Mission Editor: Top-Down RTS Command View</h2>
+<p style="color:var(--mut)">RTS controls: <b>left-drag</b> box-select • <b>left-click</b> select (Shift adds, double-click selects type) • <b>right-click</b> move / attack • <b>A</b> attack-move then click • <b>P</b> patrol then click • <b>S</b> stop • <b>H</b> hold • <b>Del</b> delete • <b>Ctrl+1–4 / 1–4</b> control groups • <b>wheel</b> zoom • <b>WASD/arrows or middle-drag</b> pan • <b>Space</b> play/pause. Blue = BLUFOR (yours), red = OPFOR, grey = CIV. Place mode drops new entities with the chosen faction.</p>
+<div class="grid2" style="grid-template-columns:1.6fr 1fr">
+<div class="card">
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+<select id="pal" style="max-width:190px"><option>Unit: B_Soldier_F</option><option>Vehicle: B_MRAP_01</option><option>Object: AmmoBox</option><option>Trigger: Area 100m</option><option>Waypoint</option><option>Marker</option></select>
+<select id="facPal" style="max-width:130px"><option>BLUFOR</option><option>OPFOR</option><option>CIV</option></select>
+<button class="ghost" id="modeSelect">Select [V]</button><button class="ghost" id="modePlace">Place [B]</button>
+<button class="ghost" id="cmdMove" title="or right-click">Move [M]</button><button class="ghost" id="cmdAttack" title="or A + click">Attack [A]</button><button class="ghost" id="cmdPatrol" title="P + click">Patrol [P]</button><button class="ghost" id="cmdStop">Stop [S]</button><button class="ghost" id="cmdHold">Hold [H]</button>
+<button class="ghost" id="undo">Undo</button><button class="ghost" id="clear">Clear</button>
+<button id="playBtn">Pause</button>
+<button class="ghost" id="expJson">JSON</button><button class="ghost" id="expSqf">SQF</button>
+<span class="pill ok" id="edMode">SELECT</span><span class="pill" id="edSel">0 selected</span><span class="pill" id="edClock">T+0s</span>
+</div>
+<canvas id="map" width="900" height="520" style="height:520px;cursor:crosshair"></canvas>
+<div id="selInfo" class="log" style="min-height:52px;margin-top:8px">No selection — drag a box over blue units, then right-click to order.</div>
+<p style="color:var(--mut);font-size:13px">Mirrors C# <code>MissionEditor.PlaceEntity / MoveGizmo / AlignToTerrain</code> + <code>TriggerZone.Poll</code>. Orders become waypoints; export below generates <code>mission.json</code> / <code>init.sqf</code>.</p>
+</div>
+<div><h3>C# starter — placement + export (excerpt)</h3>
+<pre><code>// MissionEditor.cs
+public enum EdMode { Flycam3D, Map2D, Live }
+public sealed class PlacedEntity {
+  public string Id, Prefab, Faction="BLUFOR";
+  public Vector3 Pos; public float Yaw, Health=1;
+  public string VarName="", InitScript="";
+}
+public sealed class MissionEditor {
+  public EdMode Mode=EdMode.Map2D;
+  public List&lt;PlacedEntity&gt; Entities=new();
+  public PlacedEntity PlaceEntity(string prefab,
+    Vector3 p, bool alignGround=true){
+    if(alignGround) p.Y=Terrain.SampleHeight(p.X,p.Z);
+    var e=new PlacedEntity{Id=Guid.NewGuid().ToString("N"),
+      Prefab=prefab,Pos=p};
+    Entities.Add(e); Undo.Push(()=>Entities.Remove(e));
+    return e;
+  }
+  public void MoveGizmo(PlacedEntity e,Vector3 d){
+    e.Pos+=d; e.Pos.Y=Terrain.SampleHeight(e.Pos.X,e.Pos.Z);}
+  public string ExportJson() =&gt;
+    JsonSerializer.Serialize(Entities,
+      new JsonSerializerOptions{WriteIndented=true});
+  public string ExportSqf(){ // init.sqf + description.ext
+    var sb=new StringBuilder("// generated init.sqf\n");
+    foreach(var e in Entities)
+      sb.AppendLine(
+        $"{e.VarName==""?"_v":e.VarName} = " +
+        $"\"{e.Prefab}\" createVehicle [{e.Pos.X:F1}, " +
+        $"{e.Pos.Z:F1}, 0];");
+    return sb.ToString();
+  }
+}
+// Trigger.cs — condition polling, e.g. "this && triggerActivated"
+public sealed class TriggerZone {
+  public string Condition="this"; public string OnActivate="";
+  public void Poll(SQFInterpreter sqf){
+    if(sqf.EvalBool(Condition)) sqf.Exec(OnActivate);
+  }
+}</code></pre>
+<div class="log" id="edOut">entities: 0 — click the map.</div>
+</div>
+</div>
+</section>
+
+<section id="combat">
+<h2>Section 4 — Combat: Ballistics &amp; AI State Machine</h2>
+<div class="grid2">
+<div class="card"><h3>Ballistics solver (drag + drop + penetration)</h3>
+<div class="kv"><div><label>Muzzle v (m/s)</label><input id="bV" type="number" value="820"></div>
+<div><label>Angle (deg)</label><input id="bA" type="number" value="1.2"></div>
+<div><label>Drag coeff</label><input id="bD" type="number" step="0.001" value="0.0025"></div>
+<div><label>Wind (m/s)</label><input id="bW" type="number" value="2"></div></div>
+<div style="margin:8px 0"><button id="bFire">Solve trajectory</button></div>
+<canvas id="bCanvas" width="900" height="260"></canvas>
+<div class="log" id="bOut">— solver output —</div>
+<pre><code>// Ballistics.cs — semi-implicit Euler, per-tick
+// F_drag = -k*|v|*v ; a = g + F_drag/m + wind
+public static Vector3 Step(Vector3 p, Vector3 v,
+  float dt, float k, Vector3 wind){
+  var rel=v-wind; var drag=-k*rel.Length()*rel;
+  v+=(new Vector3(0,-9.81f,0)+drag)*dt; p+=v*dt;
+  return p;
+}
+// Hit: segment-vs-hitbox, damage falloff + penetration
+// depth = f(velocity, material) → setDamage allocation</code></pre>
+</div>
+<div class="card"><h3>AI state machine (Idle → Patrol → Combat/Cover/Suppressed)</h3>
+<div style="display:flex;gap:6px;flex-wrap:wrap" id="aiBtns">
+<button class="ghost" data-s="Idle">Idle</button><button class="ghost" data-s="Patrol">Patrol</button><button class="ghost" data-s="Combat">Combat</button><button class="ghost" data-s="Cover">Cover</button><button class="ghost" data-s="Suppressed">Suppressed</button>
+<button data-s="Noise">Noise event!</button>
+</div>
+<div class="log" id="aiOut" style="margin-top:8px">state: Idle — issue orders from editor waypoints.</div>
+<pre><code>// AIController.cs — event-driven FSM
+public enum AIState{Idle,Patrol,Combat,Cover,Suppressed}
+public void OnNoise(Vector3 pos,float loud){
+  if(loud&gt;0.6&&State!=AIState.Combat)
+    Transition(AIState.Combat,"noise "+pos);
+}
+public void OnWaypoint(Vector3 wp) =&gt; Path.Enqueue(wp);
+void Transition(AIState s,string why){
+  State=s; Log($"{Name}: {s} ({why})");
+  if(s==AIState.Cover) Steering.Seek(Nav.NearestCover(Pos));
+}</code></pre>
+<p style="color:var(--mut);font-size:13px">Multiplayer: server owns AI + ballistics; noise events broadcast via relevancy cells; suppressed morale decays over 6 s.</p>
+</div>
+</div>
+</section>
+<footer>Project Overlord • Open-source tactical sim • Godot 4.x C# + SQF VM + Eden-style editor • Single-file static build (no backend) for preview.</footer>
+</div>
+<script>
+// ---------- SQF mini-interpreter (demo mirrors C# grammar) ----------
+const sqfOut=document.getElementById('sqfOut');
+function log(m){sqfOut.textContent+=(sqfOut.textContent==='— output —'?'': '\n')+m; if(sqfOut.textContent.startsWith('— output —'))sqfOut.textContent=m;}
+const vars={player:{pos:[0,0,0]}};
+function runSQF(src){
+  const lines=src.split(';').map(s=>s.trim()).filter(Boolean);
+  for(let raw of lines){
+    try{
+      let m;
+      if(m=raw.match(/^hint\s+"([\s\S]*)"$/i))log('hint: '+m[1]);
+      else if(m=raw.match(/^(_\w+)\s*=\s*(.+)$/)){vars[m[1]]=evalExpr(m[2]);log(m[1]+' = '+JSON.stringify(vars[m[1]]));}
+      else if(m=raw.match(/^(\w+)\s+setPos\s+\[(.+)\]$/i)){const p=m[2].split(',').map(Number);vars[m[1]]=vars[m[1]]||{};vars[m[1]].pos=p;log(m[1]+' moved to ['+p.join(', ')+']');}
+      else if(m=raw.match(/^"([^"]+)"\s+createVehicle\s+\[(.+)\]$/i)){const v={type:m[1],pos:m[2].split(',').map(Number),dmg:0};vars.veh=v;log('spawned '+m[1]+' at ['+m[2]+']');}
+      else if(m=raw.match(/^(\w+)\s+setDamage\s+(.+)$/i)){const d=evalExpr(m[2]);if(vars[m[1]])vars[m[1]].dmg=d;log(m[1]+' damage='+d);}
+      else if(m=raw.match(/^if\s*\((.+)\)\s*then\s*\{([\s\S]*)\}$/i)){if(evalCond(m[1]))runSQF(m[2]);}
+      else if(/^forEach/i.test(raw))log('forEach: iterated (demo)');
+      else if(/^sleep\s+/i.test(raw))log('(sleep yields — see async demo)');
+      else log('exec: '+raw);
+    }catch(e){log('ERR: '+raw+' → '+e.message);}
+  }
+}
+function val(t){t=t.trim();if(t in vars)return vars[t];if(/^".*"$/.test(t))return t.slice(1,-1);const n=Number(t);return isNaN(n)?t:n;}
+function evalExpr(e){e=e.trim();let m=e.match(/^"([^"]+)"\s+createVehicle\s+\[(.+)\]$/i);if(m)return{type:m[1],pos:m[2].split(',').map(Number)};if(/^\[.*\]$/.test(e))return e.slice(1,-1).split(',').map(x=>val(x));return val(e);}
+function evalCond(c){let m=c.match(/(.+?)(==|!=|>=|<=|>|<)(.+)/);if(!m)return !!val(c);const a=val(m[1]),b=val(m[3]);switch(m[2]){case'==':return a==b;case'!=':return a!=b;case'>':return a>b;case'<':return a<b;case'>=':return a>=b;case'<=':return a<=b;}return false;}
+document.getElementById('sqfRun').onclick=()=>{sqfOut.textContent='';runSQF(document.getElementById('sqfIn').value);};
+// cooperative async demo (spawn/sleep never blocks render)
+document.getElementById('sqfAsync').onclick=async()=>{log('spawn: patrol task started');for(let i=1;i<=3;i++){await new Promise(r=>setTimeout(r,300));log('spawn tick '+i+'/3 (render still live)');}log('spawn: done');};
+// ---------- Mission editor: top-down RTS command view (select/box/order/patrol/minimap/sim) ----------
+const cv=document.getElementById('map'),ctx=cv.getContext('2d'),edOut=document.getElementById('edOut');
+const WORLD=8000;
+const cam={x:4000,y:4000,z:1};
+let playing=true, simT=0, uid=1, undoStack=[];
+let ents=[], shots=[], pings=[];
+let sel=new Set(), pending=null; // pending: null|'move'|'attack'|'patrol'
+let editMode='select'; // 'select' | 'place'
+const groups={1:new Set(),2:new Set(),3:new Set(),4:new Set()};
+const keysDown={};
+const FAC_COL={BLUFOR:'#60a5fa',OPFOR:'#f87171',CIV:'#c9c9c9'};
+function mkEnt(kind,faction,x,y,o={}){
+  const base={Unit:{hp:100,sp:130,rng:550,dmg:8,cd:0.8,r:55},Vehicle:{hp:420,sp:320,rng:950,dmg:26,cd:1.4,r:95},
+    Object:{hp:200,sp:0,rng:0,dmg:0,cd:0,r:70},Trigger:{hp:1e9,sp:0,rng:0,dmg:0,cd:0,r:500},
+    Waypoint:{hp:1e9,sp:0,rng:0,dmg:0,cd:0,r:40},Marker:{hp:1e9,sp:0,rng:0,dmg:0,cd:0,r:40}}[kind];
+  return {id:uid++,kind,faction,x:Math.max(0,Math.min(WORLD,x)),y:Math.max(0,Math.min(WORLD,y)),
+    hp:o.hp??base.hp,maxHp:base.hp,sp:base.sp,rng:base.rng,dmg:base.dmg,cd:base.cd,r:base.r,
+    dest:null,queue:[],tgt:null,mode:'hold',patA:null,patB:null,hold:kind==='Object'||kind==='Trigger'?true:false,
+    cool:Math.random()*0.5,angle:Math.random()*6.28,alive:true,deadT:0,
+    label:o.label??'',fired:false,prefab:o.prefab??''};
+}
+function seed(){
+  ents=[];shots=[];pings=[];sel=new Set();uid=1;
+  const sq=(n,fac,x,y,spread,veh)=>{for(let i=0;i<n;i++)ents.push(mkEnt('Unit',fac,x+(Math.random()*2-1)*spread,y+(Math.random()*2-1)*spread));if(veh)ents.push(mkEnt('Vehicle',fac,x+120,y+80));};
+  sq(5,'BLUFOR',3950,3750,120,true); sq(3,'BLUFOR',4700,4400,100,false);
+  sq(4,'OPFOR',6000,5650,130,true); sq(1,'OPFOR',5200,5000,40,false);
+  sq(2,'CIV',4400,4200,80,false);
+  ents.push(mkEnt('Object','BLUFOR',4100,4000,{prefab:'AmmoBox'}));
+  ents.push(mkEnt('Trigger','CIV',6000,5750,{label:'OBJ Hammer'}));
+  ents.push(mkEnt('Marker','CIV',4400,4200,{label:'Montignac'}));
+  const op=ents.filter(e=>e.faction==='OPFOR'&&e.kind==='Unit');op.forEach((e,i)=>{e.mode='patrol';e.patA={x:5850,y:5550};e.patB={x:6150,y:5900};e.dest={x:e.patA.x,y:e.patA.y};});
+}
+seed();
+// terrain dressing (precomputed, world coords)
+const fields=[];for(let gx=0;gx<7;gx++)for(let gz=0;gz<6;gz++){if((gx+gz)%3===2)continue;const x=900+gx*480,z=1500+gz*480;if(x>5600||z>6200)continue;fields.push({x,z,w:440,h:440,c:(gx*7+gz*3)%2?'#3d4a26':'#4d4a2a'});}
+const blobs=[];{let s=42;const rnd=()=>{s=(s*16807)%2147483647;return s/2147483647;};for(let i=0;i<70;i++){const x=rnd()*WORLD,z=rnd()*WORLD;if(Math.hypot(x-4400,z-4200)<900)continue;if(Math.hypot(x-2500,z-900)<900)continue;blobs.push({x,z,r:120+rnd()*260});}}
+const roadMain=[[700,2100],[2100,2900],[3300,3600],[4400,4200],[5600,4900],[6900,5700]];
+const roadAir=[[3400,3400],[2900,2100],[2500,1000]];
+function snap(){undoStack.push(JSON.stringify({ents,uid}));if(undoStack.length>40)undoStack.shift();}
+function restore(){const s=undoStack.pop();if(!s)return;const o=JSON.parse(s);ents=o.ents;uid=o.uid;sel=new Set([...sel].filter(id=>ents.some(e=>e.id===id)));}
+// transforms
+function view(){const base=Math.min(cv.width,cv.height)/WORLD;return {s:base*cam.z};}
+function w2s(x,y){const{s}=view();return [cv.width/2+(x-cam.x)*s,cv.height/2+(y-cam.y)*s];}
+function s2w(sx,sy){const{s}=view();return {x:cam.x+(sx-cv.width/2)/s,y:cam.y+(sy-cv.height/2)/s};}
+function evPos(ev){const r=cv.getBoundingClientRect();return {x:(ev.clientX-r.left)*cv.width/r.width,y:(ev.clientY-r.top)*cv.height/r.height};}
+function entAt(wx,wy){let best=null,bd=1e9;for(const e of ents){if(!e.alive)continue;const{s}=view();const tol=Math.max(e.r,220/cam.z);const d=Math.hypot(e.x-wx,e.y-wy);if(d<tol&&d<bd){bd=d;best=e;}}return best;}
+// orders
+function orderMove(list,wx,wy,add){for(const e of list){if(!e.alive||!e.sp)continue;const p={x:wx+(Math.random()*2-1)*e.r,y:wy+(Math.random()*2-1)*e.r};if(add){e.queue.push({t:'m',...p});}else{e.queue=[];e.dest=p;e.tgt=null;e.mode='move';}pings.push({x:wx,y:wy,c:'#4ade80',t:0});}}
+function orderAttack(list,wx,wy,target,add){for(const e of list){if(!e.alive||!e.sp)continue;if(target){if(add)e.queue.push({t:'a',id:target.id});else{e.queue=[];e.tgt=target.id;e.mode='attack';e.dest={x:target.x,y:target.y};}}else{if(add)e.queue.push({t:'am',x:wx,y:wy});else{e.queue=[];e.dest={x:wx,y:wy};e.mode='attackmove';e.tgt=null;}}pings.push({x:wx,y:wy,c:'#f87171',t:0});}}
+function orderPatrol(list,wx,wy){for(const e of list){if(!e.alive||!e.sp)continue;if(!e.patA||e.dest){e.patA={x:e.x,y:e.y};e.patB={x:wx,y:wy};e.dest={x:wx,y:wy};}else{e.patB={x:wx,y:wy};}e.mode='patrol';e.tgt=null;e.queue=[];}pings.push({x:wx,y:wy,c:'#ffb454',t:0});}
+function orderStop(list){for(const e of list){e.dest=null;e.queue=[];e.tgt=null;if(e.mode!=='patrol')e.mode='hold';}}
+function selectedEnts(){return ents.filter(e=>sel.has(e.id)&&e.alive);}
+function mobileSel(){return selectedEnts().filter(e=>e.sp>0);}
+// input
+let drag=null,midPan=null,miniDrag=false;
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+cv.addEventListener('pointerdown',ev=>{
+  const p=evPos(ev),w=s2w(p.x,p.y);
+  if(ev.button===1){midPan={sx:p.x,sy:p.y,cx:cam.x,cy:cam.y};cv.setPointerCapture(ev.pointerId);return;}
+  if(ev.button===2){ // RTS right-click order
+    const lst=mobileSel();if(!lst.length)return;
+    const hit=entAt(w.x,w.y);
+    const foe=hit&&hit.alive&&hit.faction!==lst[0].faction&&(hit.faction==='OPFOR'||hit.faction==='BLUFOR')&&(hit.kind==='Unit'||hit.kind==='Vehicle');
+    if(pending==='patrol'){orderPatrol(lst,w.x,w.y);}
+    else if(foe){orderAttack(lst,w.x,w.y,hit,ev.shiftKey);}
+    else if(pending==='attack'){orderAttack(lst,w.x,w.y,null,ev.shiftKey);}
+    else orderMove(lst,w.x,w.y,ev.shiftKey);
+    pending=null;setModePill();return;
+  }
+  // left button
+  if(miniHit(p.x,p.y)){miniDrag=true;jumpMini(p.x,p.y);return;}
+  if(pending){ // targeted command via left click (A/P/M then click)
+    const lst=mobileSel();
+    const hit=entAt(w.x,w.y);
+    if(pending==='patrol')orderPatrol(lst,w.x,w.y);
+    else if(pending==='attack'){const foe=hit&&hit.alive&&hit.kind!=='Trigger'&&hit.kind!=='Marker'?hit:null;orderAttack(lst,w.x,w.y,foe&&foe.faction!==lst[0].faction?foe:null,ev.shiftKey);}
+    else if(pending==='move')orderMove(lst,w.x,w.y,ev.shiftKey);
+    pending=null;setModePill();return;
+  }
+  if(editMode==='place'){ // placement click
+    snap();
+    const pal=document.getElementById('pal').value,fac=document.getElementById('facPal').value;
+    const kind=pal.startsWith('Unit')?'Unit':pal.startsWith('Vehicle')?'Vehicle':pal.startsWith('Object')?'Object':pal.startsWith('Trigger')?'Trigger':pal.startsWith('Waypoint')?'Waypoint':'Marker';
+    ents.push(mkEnt(kind,kind==='Trigger'||kind==='Marker'?'CIV':fac,w.x,w.y,{prefab:pal,label:kind==='Trigger'?'Trigger':''}));
+    return;
+  }
+  drag={x0:p.x,y0:p.y,x1:p.x,y1:p.y,shift:ev.shiftKey};
+});
+cv.addEventListener('pointermove',ev=>{
+  const p=evPos(ev);
+  if(midPan){const{s}=view();cam.x=midPan.cx-(p.x-midPan.sx)/s;cam.y=midPan.cy-(p.y-midPan.sy)/s;clampCam();return;}
+  if(miniDrag){jumpMini(p.x,p.y);return;}
+  if(drag){drag.x1=p.x;drag.y1=p.y;}
+});
+addEventListener('pointerup',ev=>{
+  if(midPan&&ev.button===1)midPan=null;
+  miniDrag=false;
+  if(!drag)return;
+  const d=drag;drag=null;
+  const moved=Math.hypot(d.x1-d.x0,d.y1-d.y0)>6;
+  const a=s2w(Math.min(d.x0,d.x1),Math.min(d.y0,d.y1)),b=s2w(Math.max(d.x0,d.x1),Math.max(d.y0,d.y1));
+  if(!moved){ // click select
+    const w=s2w(d.x0,d.y0),hit=entAt(w.x,w.y);
+    if(!d.shift)sel.clear();
+    if(hit) {if(d.shift&&sel.has(hit.id))sel.delete(hit.id);else sel.add(hit.id);}
+  } else { // box select (skip triggers/markers unless only them)
+    const box=ents.filter(e=>e.alive&&e.x>=a.x&&e.x<=b.x&&e.y>=a.y&&e.y<=b.y);
+    let troops=box.filter(e=>e.kind==='Unit'||e.kind==='Vehicle');
+    const pick=troops.length?troops:box;
+    if(!d.shift)sel.clear();
+    pick.forEach(e=>sel.add(e.id));
+  }
+  refreshSel();
+});
+cv.addEventListener('dblclick',ev=>{const p=evPos(ev),w=s2w(p.x,p.y),hit=entAt(w.x,w.y);if(!hit)return;sel.clear();ents.forEach(e=>{if(e.alive&&e.kind===hit.kind&&e.faction===hit.faction&&Math.abs(e.x-hit.x)<2500&&Math.abs(e.y-hit.y)<2500)sel.add(e.id);});refreshSel();});
+cv.addEventListener('wheel',ev=>{ev.preventDefault();const p=evPos(ev),before=s2w(p.x,p.y);cam.z=Math.max(0.6,Math.min(6,cam.z*(ev.deltaY<0?1.15:0.87)));const{s}=view();cam.x=before.x-(p.x-cv.width/2)/s;cam.y=before.y-(p.y-cv.height/2)/s;clampCam();},{passive:false});
+function clampCam(){cam.x=Math.max(-500,Math.min(WORLD+500,cam.x));cam.y=Math.max(-500,Math.min(WORLD+500,cam.y));}
+addEventListener('keydown',e=>{
+  if(/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))return;
+  keysDown[e.code]=true;
+  const lst=mobileSel();
+  if(e.code==='Space'){e.preventDefault();togglePlay();}
+  if(e.code==='KeyV')setEdit('select');
+  if(e.code==='KeyB')setEdit('place');
+  if(e.code==='KeyM'){pending='move';setModePill();}
+  if(e.code==='KeyA'){pending='attack';setModePill();}
+  if(e.code==='KeyP'){pending='patrol';setModePill();}
+  if(e.code==='KeyS')orderStop(lst);
+  if(e.code==='KeyH'){orderStop(lst);lst.forEach(e=>{e.mode='hold';e.hold=true;});}
+  if(e.code==='Delete'||e.code==='Backspace'){if(sel.size){snap();ents=ents.filter(e=>!sel.has(e.id));sel.clear();refreshSel();}}
+  if(e.code==='Escape'){pending=null;if(editMode==='place')setEdit('select');else{sel.clear();refreshSel();}setModePill();}
+  if(e.code.startsWith('Digit')){const n=+e.code.slice(5);if(n>=1&&n<=4){if(e.ctrlKey||e.metaKey){e.preventDefault();groups[n]=new Set(sel);}else if(groups[n].size){sel=new Set([...groups[n]].filter(id=>ents.some(e=>e.id===id&&e.alive)));refreshSel();}}}
+});
+addEventListener('keyup',e=>keysDown[e.code]=false);
+// toolbar
+function setEdit(m){editMode=m;document.getElementById('edMode').textContent=(pending?pending.toUpperCase()+' → CLICK':m.toUpperCase());cv.style.cursor=m==='place'?'copy':'crosshair';}
+function setModePill(){document.getElementById('edMode').textContent=pending?pending.toUpperCase()+' → CLICK':editMode.toUpperCase();}
+document.getElementById('modeSelect').onclick=()=>setEdit('select');
+document.getElementById('modePlace').onclick=()=>setEdit('place');
+document.getElementById('cmdMove').onclick=()=>{pending='move';setModePill();};
+document.getElementById('cmdAttack').onclick=()=>{pending='attack';setModePill();};
+document.getElementById('cmdPatrol').onclick=()=>{pending=null;orderPatrol(mobileSel(),cam.x+300,cam.y);};
+document.getElementById('cmdStop').onclick=()=>orderStop(mobileSel());
+document.getElementById('cmdHold').onclick=()=>{const l=mobileSel();orderStop(l);l.forEach(e=>e.hold=true);};
+function togglePlay(){playing=!playing;document.getElementById('playBtn').textContent=playing?'Pause':'Play';}
+document.getElementById('playBtn').onclick=togglePlay;
+document.getElementById('undo').onclick=()=>{restore();refreshSel();};
+document.getElementById('clear').onclick=()=>{snap();ents=[];sel.clear();refreshSel();};
+document.getElementById('expJson').onclick=()=>{edOut.textContent='mission.json:\n'+JSON.stringify(ents.filter(e=>e.alive).map(e=>({id:e.id,kind:e.kind,faction:e.faction,pos:[Math.round(e.x),Math.round(e.y)],hp:Math.round(e.hp),label:e.label})),null,1).slice(0,1200);};
+document.getElementById('expSqf').onclick=()=>{let s='// init.sqf (generated)\n';ents.filter(e=>e.alive&&e.kind!=='Trigger').forEach(e=>{const cls=e.kind==='Unit'?'B_Soldier_F':e.kind==='Vehicle'?'B_MRAP_01':'AmmoBox';s+=`_v${e.id} = "${cls}" createVehicle [${Math.round(e.x)}, ${Math.round(e.y)}, 0]; // ${e.faction}\n`;});edOut.textContent=s.slice(0,1400);};
+function refreshSel(){
+  const l=selectedEnts();
+  document.getElementById('edSel').textContent=l.length+' selected';
+  const box=document.getElementById('selInfo');
+  if(!l.length){box.textContent='No selection — drag a box over blue units, then right-click to order.';return;}
+  const counts={};l.forEach(e=>counts[e.kind+'/'+e.faction]=(counts[e.kind+'/'+e.faction]||0)+1);
+  let h=`${l.length} selected: `+Object.entries(counts).map(([k,v])=>`${v}× ${k}`).join('  ')+'  | groups: 1:'+groups[1].size+' 2:'+groups[2].size+' 3:'+groups[3].size+' 4:'+groups[4].size;
+  if(l.length===1){const e=l[0];h+=`<br>HP <input id="selHp" type="range" min="1" max="${e.maxHp}" value="${Math.round(e.hp)}" style="width:160px;vertical-align:middle"> ${Math.round(e.hp)}/${e.maxHp} · faction <select id="selFac" style="width:110px;display:inline-block"><option ${e.faction==='BLUFOR'?'selected':''}>BLUFOR</option><option ${e.faction==='OPFOR'?'selected':''}>OPFOR</option><option ${e.faction==='CIV'?'selected':''}>CIV</option></select> · <button class="ghost" id="selDel" style="padding:4px 10px">Delete</button>`;}
+  box.innerHTML=h;
+  const hp=document.getElementById('selHp');if(hp)hp.oninput=()=>{const e=selectedEnts()[0];e.hp=+hp.value;refreshSel();};
+  const fc=document.getElementById('selFac');if(fc)fc.onchange=()=>{selectedEnts()[0].faction=fc.value;};
+  const del=document.getElementById('selDel');if(del)del.onclick=()=>{snap();ents=ents.filter(e=>!sel.has(e.id));sel.clear();refreshSel();};
+}
+// sim
+function nearestFoe(e){let best=null,bd=1e9;for(const o of ents){if(!o.alive||o.faction===e.faction||o.faction==='CIV'||(o.kind!=='Unit'&&o.kind!=='Vehicle'))continue;const d=Math.hypot(o.x-e.x,o.y-e.y);if(d<e.rng&&d<bd){bd=d;best=o;}}return best;}
+function stepSim(dt){
+  simT+=dt;
+  for(const e of ents){
+    if(!e.alive)continue;
+    if(e.cool>0)e.cool-=dt;
+    if(!e.sp){ // static: triggers still poll, then skip
+      if(e.kind==='Trigger'&&!e.fired){const inside=ents.some(o=>o.alive&&o.faction==='BLUFOR'&&(o.kind==='Unit'||o.kind==='Vehicle')&&Math.hypot(o.x-e.x,o.y-e.y)<e.r);
+        if(inside){e.fired=true;edOut.textContent=`TRIGGER "${e.label||'zone'}" — condition [this] TRUE at T+${simT.toFixed(0)}s → hint "Objective complete"; onAct exec.`;}}
+      continue;}
+    // resolve attack target
+    let foe=null;
+    if(e.tgt!=null){foe=ents.find(o=>o.id===e.tgt&&o.alive)||null;if(!foe)e.tgt=null;}
+    if(!foe&&(e.mode==='attack'||e.mode==='attackmove'||e.mode==='patrol'))foe=nearestFoe(e);
+    if(!foe&&e.faction==='OPFOR')foe=nearestFoe(e); // OPFOR self-defends
+    if(foe){
+      const d=Math.hypot(foe.x-e.x,foe.y-e.y);
+      if(d<=e.rng){ // hold + fire
+        e.angle=Math.atan2(foe.y-e.y,foe.x-e.x);
+        if(e.cool<=0){e.cool=e.cd;shots.push({x:e.x,y:e.y,tx:foe.x,ty:foe.y,t:0,spd:2600,dmg:e.dmg,from:e.id,to:foe.id});}
+        if(e.mode==='move'||e.mode==='hold')e.dest=null;
+      } else if(e.mode!=='hold'||e.faction==='OPFOR'){e.dest={x:foe.x,y:foe.y};}
+    }
+    // movement
+    if(e.dest&&(!foe||Math.hypot(foe.x-e.x,foe.y-e.y)>e.rng)){
+      const dx=e.dest.x-e.x,dy=e.dest.y-e.y,d=Math.hypot(dx,dy);
+      if(d<e.sp*dt+8){
+        e.x=e.dest.x;e.y=e.dest.y;
+        const nx=e.queue.shift();
+        if(nx){
+          if(nx.t==='m'){e.dest={x:nx.x,y:nx.y};e.mode='move';}
+          else if(nx.t==='am'){e.dest={x:nx.x,y:nx.y};e.mode='attackmove';}
+          else if(nx.t==='a'){e.tgt=nx.id;const t=ents.find(o=>o.id===nx.id&&o.alive);e.dest=t?{x:t.x,y:t.y}:null;e.mode='attack';}
+        } else if(e.mode==='patrol'&&e.patA&&e.patB){
+          const toB=Math.hypot(e.patB.x-e.x,e.patB.y-e.y)<40;
+          e.dest=toB?{...e.patA}:{...e.patB};
+        } else {e.dest=null;if(e.mode==='move'||e.mode==='attackmove')e.mode='hold';}
+      } else {e.angle=Math.atan2(dy,dx);e.x+=dx/d*e.sp*dt;e.y+=dy/d*e.sp*dt;}
+    }
+    // separation (cheap, local)
+    for(const o of ents){if(o===e||!o.alive||!o.sp)continue;const dx=e.x-o.x,dy=e.y-o.y,d=Math.hypot(dx,dy);if(d>0&&d<e.r+o.r){e.x+=dx/d*20*dt;e.y+=dy/d*20*dt;}}
+    e.x=Math.max(0,Math.min(WORLD,e.x));e.y=Math.max(0,Math.min(WORLD,e.y));
+  }
+  // projectiles
+  for(let i=shots.length-1;i>=0;i--){const s=shots[i];s.t+=dt;const dx=s.tx-s.x,dy=s.ty-s.y,d=Math.hypot(dx,dy),step=s.spd*dt;
+    if(d<=step+20){const t=ents.find(o=>o.id===s.to&&o.alive);if(t){t.hp-=s.dmg;if(t.hp<=0){t.alive=false;t.deadT=0;edOut.textContent=`kill: ${t.kind} ${t.faction} #${t.id} destroyed at T+${simT.toFixed(0)}s.`;}}shots.splice(i,1);}
+    else{s.x+=dx/d*step;s.y+=dy/d*step;if(s.t>3)shots.splice(i,1);}}
+  for(const e of ents)if(!e.alive)e.deadT+=dt;
+  if(ents.some(e=>!e.alive&&e.deadT<3.1&&e.deadT>3))ents=ents.filter(e=>e.alive||e.deadT<3);
+  sel=new Set([...sel].filter(id=>ents.some(e=>e.id===id&&e.alive)));
+  for(const p of pings)p.t+=dt;pings=pings.filter(p=>p.t<0.8);
+}
+// render
+const mini={x:0,y:0,w:158,h:148};
+function miniHit(px,py){return px>cv.width-mini.w-10&&py>cv.height-mini.h-10;}
+function jumpMini(px,py){const mx=(px-(cv.width-mini.w-10))/mini.w,my=(py-(cv.height-mini.h-10))/mini.h;cam.x=Math.max(0,Math.min(WORLD,mx*WORLD));cam.y=Math.max(0,Math.min(WORLD,my*WORLD));clampCam();}
+function draw(){
+  const{s}=view();
+  ctx.clearRect(0,0,cv.width,cv.height);
+  // ground
+  ctx.fillStyle='#101812';ctx.fillRect(0,0,cv.width,cv.height);
+  const vx0=cam.x-cv.width/2/s, vy0=cam.y-cv.height/2/s;
+  // sea border
+  ctx.fillStyle='#1b3038';
+  // fields
+  for(const f of fields){if(f.x+f.w<vx0||f.x>vx0+cv.width/s||f.z+f.h<vy0||f.z>vy0+cv.height/s)continue;const[a,b]=w2s(f.x,f.z);ctx.fillStyle=f.c;ctx.fillRect(a,b,f.w*s,f.h*s);}
+  // forest blobs
+  ctx.fillStyle='#243a1e';
+  for(const bl of blobs){const[a,b]=w2s(bl.x,bl.z);const r=bl.r*s;if(r<2)continue;if(a+r<0||a-r>cv.width||b+r<0||b-r>cv.height)continue;ctx.beginPath();ctx.arc(a,b,r,0,7);ctx.fill();}
+  // grid 1km
+  ctx.strokeStyle='rgba(120,150,180,0.14)';ctx.lineWidth=1;
+  for(let gx=0;gx<=WORLD;gx+=1000){const[a]=w2s(gx,0);if(a<0||a>cv.width)continue;ctx.beginPath();ctx.moveTo(a,0);ctx.lineTo(a,cv.height);ctx.stroke();}
+  for(let gz=0;gz<=WORLD;gz+=1000){const[,b]=w2s(0,gz);if(b<0||b>cv.height)continue;ctx.beginPath();ctx.moveTo(0,b);ctx.lineTo(cv.width,b);ctx.stroke();}
+  // roads
+  const road=(pts,col,w)=>{ctx.strokeStyle=col;ctx.lineWidth=Math.max(1.5,w*s);ctx.beginPath();pts.forEach(([x,y],i)=>{const[a,b]=w2s(x,y);i?ctx.lineTo(a,b):ctx.moveTo(a,b);});ctx.stroke();};
+  road(roadMain,'#8a7355',26);road(roadAir,'#8a7355',20);
+  // airfield
+  {const[a,b]=w2s(2500,900);ctx.fillStyle='#3c3f43';const w=900*s,h=120*s;ctx.fillRect(a-w/2,b-h/2,w,h);ctx.fillStyle='#e8e8e8';for(let i=-4;i<=4;i++)ctx.fillRect(a+i*100*s-14*s,b-2,28*s,4);}
+  // village blocks
+  ctx.fillStyle='#5c5546';
+  for(let i=0;i<8;i++){const[a,b]=w2s(3900+i*130,3900);ctx.fillRect(a-30*s,b-22*s,60*s,44*s);}
+  for(let i=0;i<7;i++){const[a,b]=w2s(3950+i*130,4520);ctx.fillRect(a-30*s,b-22*s,60*s,44*s);}
+  // labels
+  ctx.fillStyle='rgba(200,214,228,0.75)';ctx.font='11px sans-serif';
+  {const[a,b]=w2s(4400,4200);ctx.fillText('MONTIGNAC',a-30,b-60);}
+  {const[a,b]=w2s(2500,900);ctx.fillText('AIRFIELD',a-24,b-90);}
+  {const[a,b]=w2s(6050,5850);ctx.fillText('FOB HAMMER',a-30,b-60);}
+  // triggers (under units)
+  for(const e of ents){if(e.kind!=='Trigger'||!e.alive)continue;const[a,b]=w2s(e.x,e.y);ctx.strokeStyle=e.fired?'#4ade80':'#f472b6';ctx.setLineDash([6,4]);ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(a,b,e.r*s,0,7);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=e.fired?'#4ade80':'#f472b6';ctx.fillText((e.label||'TRIGGER')+(e.fired?' ✓':''),a-30,b-e.r*s-6);}
+  // path lines for selected
+  ctx.lineWidth=1.5;
+  for(const e of selectedEnts()){if(!e.dest&&!e.queue.length&&!e.patB)continue;ctx.strokeStyle=e.faction==='BLUFOR'?'#4ade80':'#f87171';ctx.beginPath();let[a,b]=w2s(e.x,e.y);ctx.moveTo(a,b);
+    const pts=[];if(e.dest)pts.push(e.dest);e.queue.forEach(q=>{if(q.x!=null)pts.push(q);});
+    if(e.mode==='patrol'&&e.patA&&e.patB){const[pa,pb]=[w2s(e.patA.x,e.patA.y),w2s(e.patB.x,e.patB.y)];ctx.lineTo(pa[0],pa[1]);ctx.lineTo(pb[0],pb[1]);}
+    else pts.forEach(p=>{const[c,d]=w2s(p.x,p.y);ctx.lineTo(c,d);ctx.fillStyle='#fff';ctx.fillRect(c-2,d-2,4,4);});
+    ctx.stroke();}
+  // entities
+  for(const e of ents){
+    if(e.kind==='Marker'){const[a,b]=w2s(e.x,e.y);ctx.fillStyle='#e8e8e8';ctx.font='bold 11px sans-serif';ctx.fillText('◆ '+(e.label||'MK'),a-8,b);continue;}
+    if(e.kind==='Waypoint')continue;
+    const[a,b]=w2s(e.x,e.y);
+    if(a<-40||a>cv.width+40||b<-40||b>cv.height+40)continue;
+    const col=FAC_COL[e.faction]||'#fff';
+    if(e.kind==='Object'){ctx.fillStyle='#4ade80';ctx.fillRect(a-8*s*2,b-6*s*2,16*s*2,12*s*2);ctx.fillStyle='#d7e1ec';ctx.font='10px sans-serif';ctx.fillText('AMMO',a-16,b-10);continue;}
+    const selected=sel.has(e.id);
+    // shadow + body
+    const R=Math.max(4,(e.kind==='Vehicle'?11:6.5)*Math.max(0.7,Math.min(1.6,s*8)));
+    ctx.fillStyle='rgba(0,0,0,0.35)';ctx.beginPath();ctx.arc(a+2,b+2,R,0,7);ctx.fill();
+    ctx.fillStyle=e.alive?col:'#555';
+    if(e.kind==='Vehicle'){ctx.save();ctx.translate(a,b);ctx.rotate(e.angle);ctx.fillRect(-R,-R*0.7,R*2,R*1.4);ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(-R*0.2,-R*0.5,R*0.9,R);ctx.restore();}
+    else{ctx.beginPath();ctx.arc(a,b,R,0,7);ctx.fill();ctx.strokeStyle='rgba(0,0,0,0.5)';ctx.stroke();
+      ctx.strokeStyle='#0b0f14';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(a,b);ctx.lineTo(a+Math.cos(e.angle)*R*1.6,b+Math.sin(e.angle)*R*1.6);ctx.stroke();}
+    if(!e.alive){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(a-6,b-6);ctx.lineTo(a+6,b+6);ctx.moveTo(a+6,b-6);ctx.lineTo(a-6,b+6);ctx.stroke();continue;}
+    // hp bar
+    const wpx=26;ctx.fillStyle='#000';ctx.fillRect(a-wpx/2,b-R-9,wpx,4);
+    ctx.fillStyle=e.hp/e.maxHp>0.5?'#4ade80':e.hp/e.maxHp>0.25?'#ffb454':'#f87171';
+    ctx.fillRect(a-wpx/2,b-R-9,wpx*Math.max(0,e.hp/e.maxHp),4);
+    // selection ring
+    if(selected){ctx.strokeStyle='#ffb454';ctx.lineWidth=2;ctx.beginPath();ctx.arc(a,b,R+5,0,7);ctx.stroke();
+      if(e.tgt!=null){const t=ents.find(o=>o.id===e.tgt&&o.alive);if(t){const[c,d]=w2s(t.x,t.y);ctx.strokeStyle='#f87171';ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(a,b);ctx.lineTo(c,d);ctx.stroke();ctx.setLineDash([]);}}}
+    // attack target cross for hovered foe skip
+  }
+  // tracers
+  for(const sh of shots){const[a,b]=w2s(sh.x,sh.y),[c,d]=w2s(sh.tx,sh.ty);ctx.strokeStyle='rgba(255,220,150,0.9)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(a,b);ctx.lineTo(a+(c-a)*0.12,b+(d-b)*0.12);ctx.stroke();}
+  // order pings
+  for(const p of pings){const[a,b]=w2s(p.x,p.y);const r=(1-p.t/0.8)*30*s+6;ctx.strokeStyle=p.c;ctx.globalAlpha=1-p.t/0.8;ctx.lineWidth=2;ctx.beginPath();ctx.arc(a,b,Math.max(4,r),0,7);ctx.stroke();ctx.globalAlpha=1;}
+  // rubber band
+  if(drag&&Math.hypot(drag.x1-drag.x0,drag.y1-drag.y0)>6){ctx.strokeStyle='#ffb454';ctx.fillStyle='rgba(255,180,84,0.12)';ctx.lineWidth=1.5;const x=Math.min(drag.x0,drag.x1),y=Math.min(drag.y0,drag.y1),w=Math.abs(drag.x1-drag.x0),h=Math.abs(drag.y1-drag.y0);ctx.fillRect(x,y,w,h);ctx.strokeRect(x,y,w,h);}
+  // top-left overlay
+  ctx.fillStyle='rgba(8,12,17,0.72)';ctx.fillRect(8,8,250,44);
+  ctx.fillStyle='#8fa0b5';ctx.font='11px sans-serif';
+  ctx.fillText(`OVERLORD RTS — 8×8 km  |  ${playing?'▶ LIVE (Space)':'⏸ PAUSED (Space)'}${pending?'  |  '+pending.toUpperCase()+' → click':''}${editMode==='place'?'  |  PLACE: '+document.getElementById('pal').value:''}`,16,25);
+  ctx.fillText(`blueford ${ents.filter(e=>e.alive&&e.faction==='BLUFOR').length}   opfor ${ents.filter(e=>e.alive&&e.faction==='OPFOR').length}   T+${simT.toFixed(0)}s   zoom ${cam.z.toFixed(1)}×`,16,40);
+  // minimap
+  const mw=mini.w,mh=mini.h,mx=cv.width-mw-10,my=cv.height-mh-10;
+  ctx.fillStyle='rgba(8,12,17,0.85)';ctx.fillRect(mx-4,my-4,mw+8,mh+8);
+  ctx.fillStyle='#16202b';ctx.fillRect(mx,my,mw,mh);
+  const k=mw/WORLD;
+  ctx.fillStyle='#2c4423';ctx.fillRect(mx+50*k,my+90*k,200*k,140*k);
+  ctx.strokeStyle='#8a7355';ctx.beginPath();roadMain.forEach(([x,y],i)=>{i?ctx.lineTo(mx+x*k,my+y*k):ctx.moveTo(mx+x*k,my+y*k);});ctx.stroke();
+  for(const e of ents){if(!e.alive)continue;ctx.fillStyle=e.kind==='Trigger'?'#f472b6':(FAC_COL[e.faction]||'#fff');const r=e.kind==='Vehicle'?3:2;ctx.fillRect(mx+e.x*k-r/2,my+e.y*k-r/2,r,r);}
+  ctx.strokeStyle='#ffb454';ctx.lineWidth=1.5;
+  const vw=cv.width/s*k,vh=cv.height/s*k;
+  ctx.strokeRect(mx+(cam.x-vw/k/2)*k,my+(cam.y-vh/k/2)*k,vw,vh);
+  ctx.fillStyle='#8fa0b5';ctx.fillText('MAP — click to jump',mx,my-8);
+}
+// main loop
+let last=performance.now();
+function frame(now){
+  requestAnimationFrame(frame);
+  let dt=(now-last)/1000;last=now;dt=Math.min(dt,0.05);
+  const pan=2600/cam.z*dt;
+  const noSel=!mobileSel().length;
+  if(keysDown.ArrowUp)cam.y-=pan;
+  if(keysDown.ArrowDown)cam.y+=pan;
+  if(keysDown.ArrowLeft)cam.x-=pan;
+  if(keysDown.ArrowRight)cam.x+=pan;
+  if(noSel||editMode==='place'){ // WASD pans when nothing to command (keys double as RTS hotkeys)
+    if(keysDown.KeyW)cam.y-=pan;
+    if(keysDown.KeyS)cam.y+=pan;
+    if(keysDown.KeyA)cam.x-=pan;
+    if(keysDown.KeyD)cam.x+=pan;
+  }
+  clampCam();
+  if(playing)stepSim(dt);
+  draw();
+  if(!frame.n)refreshSel();
+  frame.n=1;
+  document.getElementById('edClock').textContent='T+'+simT.toFixed(0)+'s';
+}
+setInterval(()=>{if(selectedEnts().length&&document.getElementById('selInfo').textContent.startsWith('No'))refreshSel();},800);
+refreshSel();requestAnimationFrame(frame);
+// ---------- Ballistics ----------
+const bc=document.getElementById('bCanvas').getContext('2d'),bOut=document.getElementById('bOut');
+document.getElementById('bFire').onclick=()=>{const v=+document.getElementById('bV').value,a=+document.getElementById('bA').value*Math.PI/180,k=+document.getElementById('bD').value,w=+document.getElementById('bW').value;let x=0,y=1.5,vx=v*Math.cos(a),vy=v*Math.sin(a);const dt=0.01;bc.clearRect(0,0,900,260);bc.strokeStyle='#223042';bc.beginPath();bc.moveTo(0,240);bc.lineTo(900,240);bc.stroke();bc.strokeStyle='#ffb454';bc.beginPath();bc.moveTo(0,240-1.5);let max=0;for(let t=0;t<20;t+=dt){const relx=vx-w;vy+=-9.81*dt-k*Math.hypot(relx,vy)*vy*dt;vx+=-k*Math.hypot(relx,vy)*relx*dt;x+=vx*dt;y+=vy*dt;max=Math.max(max,y);if(y<=0)break;const px=x/2000*900,py=240-y/400*220;if(t===0)bc.moveTo(px,py);else bc.lineTo(px,py);}bc.stroke();bOut.textContent='range ≈ '+Math.round(x)+' m • apex ≈ '+Math.round(max)+' m • drop at 500m ≈ '+(0.5*9.81*Math.pow(500/Math.max(vx,1),2)).toFixed(1)+' m • penetration ∝ v² (see C# Step)';};
+document.getElementById('bFire').click();
+// ---------- AI FSM ----------
+const aiOut=document.getElementById('aiOut');let ai='Idle';
+document.getElementById('aiBtns').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const s=b.dataset.s;if(s==='Noise'){aiOut.textContent='noise event @[1200,800] loud=0.9 → '+(ai==='Combat'?'already engaged':'Idle/Patrol → Combat (investigate)') ;ai='Combat';}else{aiOut.textContent='order: '+ai+' → '+s+' (waypoint queue updated, cover seek if Cover)';ai=s;}});
+</script>
+<script type="module">
+// ===== Project Overlord — Everon-style 3D environment (Three.js, no build step) =====
+// Ref: https://www.youtube.com/watch?v=0AqXRgCLMVg&t=27s — Arma Reforger cinematic.
+// Biome recreated: temperate pine/oak island, rolling hills + SE mountains, patchwork
+// farmland (centre/west), French rural village + church, dirt roads, northern airfield,
+// hilltop FOB, surrounding sea, overcast-to-sunset lighting + exp fog.
+import * as THREE from 'three';
+const wLog = document.getElementById('wLog');
+const say = m => { wLog.textContent = m; };
+try {
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fb4c7);           // overcast blue-grey like Reforger
+scene.fog = new THREE.FogExp2(0xa8b8c4, 0.0016);        // distance haze over 8km feel
+const camera = new THREE.PerspectiveCamera(60, 1080/520, 0.5, 4000);
+
+// ---------- lights: low western sun (Lamentin sunset @0:27) + cool sky fill ----------
+const hemi = new THREE.HemisphereLight(0xbcd0e8, 0x4a5540, 0.85);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffd9a6, 2.1);
+sun.position.set(-320, 140, 120);                        // low west sun
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left=-260; sun.shadow.camera.right=260;
+sun.shadow.camera.top=260; sun.shadow.camera.bottom=-260;
+sun.shadow.camera.far=1200; sun.shadow.bias=-0.0006;
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0x8fa0b5, 0.25));
+
+// ---------- shared heightfield: rolling hills + SE mountains + island falloff ----------
+function baseHeight(x, z) {
+  let h = 8*Math.sin(x*0.012)*Math.cos(z*0.010)
+        + 11*Math.sin(x*0.0035+1.7)*Math.sin(z*0.004+0.6)
+        + 4*Math.sin(x*0.03+0.5)*Math.sin(z*0.028+1.2);
+  const se = Math.max(0, (x + z) / 2);                   // SE rises to wooded hills ~90m
+  h += THREE.MathUtils.smoothstep(se, 120, 420) * 85;
+  const r = Math.hypot(x, z) / 430;                      // island falloff -> sea
+  h -= THREE.MathUtils.smoothstep(r, 0.72, 1.05) * 30;
+  h += 10;                                               // keep interior above sea
+  return h;
+}
+window.OverlordWorld = { sampleHeight: baseHeight };
+function groundY(x, z) { return baseHeight(x, z); }
+
+// ---------- terrain mesh with vertex-colour biome painting ----------
+{
+  const SIZE=860, SEG=150;
+  const g = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
+  g.rotateX(-Math.PI/2);
+  const pos = g.attributes.position, colors = [];
+  const cGrass=new THREE.Color(0x5d7d43), cField1=new THREE.Color(0x9aa04e),
+        cField2=new THREE.Color(0x6f5b35), cForest=new THREE.Color(0x3d5c2e),
+        cRock=new THREE.Color(0x7a7f82), cSand=new THREE.Color(0xcbb98a);
+  const c = new THREE.Color();
+  for (let i=0;i<pos.count;i++){
+    const x=pos.getX(i), z=pos.getZ(i), h=baseHeight(x,z);
+    pos.setY(i,h);
+    // patchwork farmland centre/west
+    const fx=Math.floor((x+400)/110), fz=Math.floor((z+400)/110);
+    const isField = (x<140&&x>-330&&z<200&&z>-240&&((fx+fz)%3!==2));
+    if (h<2.2) c.copy(cSand);
+    else if (h>62) c.copy(cRock);
+    else if (isField) c.copy(((fx*7+fz*3)%2===0)?cField1:cField2);
+    else c.copy(cGrass).lerp(cForest, 0.35+0.3*Math.sin(x*0.02)*Math.sin(z*0.023));
+    // subtle variation
+    const v = 0.94+0.12*((i*2654435761%100)/100);
+    colors.push(c.r*v, c.g*v, c.b*v);
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(colors,3));
+  g.computeVertexNormals();
+  const m = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:1, metalness:0 });
+  const t = new THREE.Mesh(g,m); t.receiveShadow=true; scene.add(t);
+}
+// ---------- sea ----------
+{
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(4000,4000),
+    new THREE.MeshStandardMaterial({ color:0x2e4d5e, transparent:true, opacity:0.92, roughness:0.35, metalness:0.1 }));
+  sea.rotation.x=-Math.PI/2; sea.position.y=0.9; scene.add(sea);
+}
+// ---------- roads: dirt ribbons along curves (village loop + airfield spur) ----------
+const roadPts = [[-330,-190],[-190,-110],[-70,-40],[40,20],[160,90],[290,170]].map(p=>new THREE.Vector3(p[0],0,p[1]));
+const roadCurve = new THREE.CatmullRomCurve3(roadPts);
+function ribbon(curve, width, color, yOff=0.35, segs=80) {
+  const pts = curve.getPoints(segs), verts=[], idx=[];
+  for (let i=0;i<pts.length;i++){
+    const p=pts[i], tan=curve.getTangent(i/segs);
+    const n=new THREE.Vector3(-tan.z,0,tan.x).normalize().multiplyScalar(width/2);
+    verts.push(p.x-n.x, groundY(p.x-n.x,p.z-n.z)+yOff, p.z-n.z, p.x+n.x, groundY(p.x+n.x,p.z+n.z)+yOff, p.z+n.z);
+    if(i>0){ const a=(i-1)*2; idx.push(a,a+1,a+2, a+1,a+3,a+2); }
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
+  g.setIndex(idx); g.computeVertexNormals();
+  const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,roughness:1}));
+  m.receiveShadow=true; scene.add(m); return m;
+}
+ribbon(roadCurve, 9, 0x8a7355);
+ribbon(new THREE.CatmullRomCurve3([new THREE.Vector3(-60,-60,0),new THREE.Vector3(-120,-190,0),new THREE.Vector3(-150,-300,0)]), 7, 0x8a7355);
+function distToRoad(x,z){ let d=1e9; const s=roadCurve.getPoints(60); for(const p of s){ d=Math.min(d,Math.hypot(x-p.x,z-p.z)); } return d; }
+
+// ---------- northern airfield (flat strip + runway + hangar) ----------
+{
+  const ax=-150, az=-310;
+  const strip = new THREE.Mesh(new THREE.PlaneGeometry(200,26),
+    new THREE.MeshStandardMaterial({ color:0x3c3f43, roughness:0.95 }));
+  strip.rotation.x=-Math.PI/2; strip.position.set(ax, groundY(ax,az)+0.4, az);
+  strip.receiveShadow=true; scene.add(strip);
+  for(let i=-4;i<=4;i++){ // centre dashes
+    const dash=new THREE.Mesh(new THREE.PlaneGeometry(8,1.2), new THREE.MeshBasicMaterial({color:0xe8e8e8}));
+    dash.rotation.x=-Math.PI/2; dash.position.set(ax+i*20, groundY(ax+i*20,az)+0.55, az); scene.add(dash);
+  }
+  const hangar=new THREE.Mesh(new THREE.BoxGeometry(30,10,20), new THREE.MeshStandardMaterial({color:0x6b7278,roughness:0.8}));
+  hangar.position.set(ax-20, groundY(ax-20,az+30)+5, az+30); hangar.castShadow=true; scene.add(hangar);
+}
+
+// ---------- forest: 2 InstancedMesh draws (pine + broadleaf), ~1300 trees ----------
+{
+  const trunkG=new THREE.CylinderGeometry(0.35,0.55,4.5,5);
+  const pineG=new THREE.ConeGeometry(2.8,10,6);
+  const leafG=new THREE.IcosahedronGeometry(3.4,0);
+  const trunkM=new THREE.MeshStandardMaterial({color:0x5a4230,roughness:1});
+  const pineM=new THREE.MeshStandardMaterial({color:0x2e4d2a,roughness:1});
+  const leafM=new THREE.MeshStandardMaterial({color:0x4a6b2f,roughness:1});
+  const N1=900, N2=420;
+  const t1=new THREE.InstancedMesh(trunkG,trunkM,N1), p1=new THREE.InstancedMesh(pineG,pineM,N1);
+  const t2=new THREE.InstancedMesh(trunkG,trunkM,N2), p2=new THREE.InstancedMesh(leafG,leafM,N2);
+  p1.castShadow=p2.castShadow=true;
+  const d=new THREE.Object3D(); let a=0,b=0,guard=0;
+  const village={x:40,z:20,r:105};
+  while((a<N1||b<N2)&&guard++<30000){
+    const x=(Math.random()*2-1)*400, z=(Math.random()*2-1)*400, h=groundY(x,z);
+    if(h<3||h>70) continue;
+    if(Math.hypot(x-village.x,z-village.z)<village.r) continue;      // keep village clear
+    if(Math.hypot(x+150,z+310)<120) continue;                        // keep airfield clear
+    if(distToRoad(x,z)<11) continue;
+    const s=0.7+Math.random()*0.9;
+    d.position.set(x,h,z); d.rotation.y=Math.random()*6.28; d.scale.setScalar(s); d.updateMatrix();
+    if(a<N1&&(b>=N2||Math.random()<0.68)){ t1.setMatrixAt(a,d.matrix);
+      d.position.y=h+4.5*s+3.2; d.updateMatrix(); p1.setMatrixAt(a,d.matrix); a++;
+    } else if(b<N2){ t2.setMatrixAt(b,d.matrix);
+      d.position.y=h+4.5*s+2.2; d.scale.set(s,s*0.85,s); d.updateMatrix(); p2.setMatrixAt(b,d.matrix); b++; }
+  }
+  t1.count=p1.count=a; t2.count=p2.count=b;
+  scene.add(t1,p1,t2,p2);
+  window.__treeCount=a+b;
+}
+
+// ---------- Montignac-style village: 16 houses + church (plaster + pitched roofs) ----------
+const plaster=[0xd8cdb4,0xcfc0a0,0xbfae8e,0xd0c6b0];
+function house(x,z,ry,w=11,dd=8,hh=5.5,wall=0xd8cdb4,roof=0x7a4030){
+  const grp=new THREE.Group(); const y=groundY(x,z);
+  const base=new THREE.Mesh(new THREE.BoxGeometry(w,hh,dd), new THREE.MeshStandardMaterial({color:wall,roughness:0.9}));
+  base.position.y=hh/2; base.castShadow=base.receiveShadow=true; grp.add(base);
+  const pr=new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(w,dd)/2*1.02,3.6,4), new THREE.MeshStandardMaterial({color:roof,roughness:0.85,flatShading:true}));
+  pr.position.y=hh+1.8; pr.rotation.y=Math.PI/4; pr.castShadow=true; grp.add(pr);
+  const win=new THREE.Mesh(new THREE.BoxGeometry(w*0.7,hh*0.3,0.2), new THREE.MeshStandardMaterial({color:0x2b3540,roughness:0.4}));
+  win.position.set(0,hh*0.55,dd/2+0.05); grp.add(win);
+  grp.position.set(x,y,z); grp.rotation.y=ry; scene.add(grp); return grp;
+}
+{
+  const vx=40, vz=20; let k=0;
+  for(let i=0;i<8;i++){ house(vx-60+i*17+(Math.random()*4-2), vz-28+(Math.random()*6-3), 0.1*(Math.random()-0.5), 10+Math.random()*4, 8, 5.5, plaster[k++%4]); }
+  for(let i=0;i<7;i++){ house(vx-52+i*17+(Math.random()*4-2), vz+34+(Math.random()*6-3), Math.PI+0.1*(Math.random()-0.5), 10+Math.random()*4, 8, 5.5, plaster[k++%4]); }
+  house(vx+78, vz+6, Math.PI/2, 12, 9, 6);                       // farmstead
+  const chY=groundY(vx+8,vz-2);                                  // church + tower + spire
+  const church=new THREE.Group();
+  const nave=new THREE.Mesh(new THREE.BoxGeometry(22,9,10), new THREE.MeshStandardMaterial({color:0xe0d6bc,roughness:0.9}));
+  nave.position.y=4.5; nave.castShadow=true; church.add(nave);
+  const tower=new THREE.Mesh(new THREE.BoxGeometry(6,20,6), new THREE.MeshStandardMaterial({color:0xd5c9ac,roughness:0.9}));
+  tower.position.set(13,10,0); tower.castShadow=true; church.add(tower);
+  const spire=new THREE.Mesh(new THREE.ConeGeometry(4.4,9,4), new THREE.MeshStandardMaterial({color:0x4a4a4a,flatShading:true}));
+  spire.position.set(13,24.5,0); spire.rotation.y=Math.PI/4; church.add(spire);
+  church.position.set(vx+8,chY,vz-2); scene.add(church);
+}
+
+// ---------- hilltop FOB (SE, like Polos fortified hilltop): tower + sandbags + MRAPs + squads ----------
+{
+  const fx=205, fz=185, fy=groundY(fx,fz);
+  const plat=new THREE.Mesh(new THREE.CylinderGeometry(26,28,2,12), new THREE.MeshStandardMaterial({color:0x6b6a58,roughness:1}));
+  plat.position.set(fx,fy+0.5,fz); plat.receiveShadow=true; scene.add(plat);
+  const legM=new THREE.MeshStandardMaterial({color:0x6e5a40,roughness:1});
+  for(const [lx,lz] of [[-4,-4],[4,-4],[-4,4],[4,4]]){
+    const leg=new THREE.Mesh(new THREE.BoxGeometry(0.8,12,0.8),legM);
+    leg.position.set(fx+lx,fy+6,fz+lz); leg.castShadow=true; scene.add(leg);
+  }
+  const cab=new THREE.Mesh(new THREE.BoxGeometry(11,4,11), legM);
+  cab.position.set(fx,fy+13.5,fz); cab.castShadow=true; scene.add(cab);
+  const bagM=new THREE.MeshStandardMaterial({color:0x9a8a66,roughness:1});
+  for(let i=0;i<14;i++){ const a2=i/14*Math.PI*2;
+    const bag=new THREE.Mesh(new THREE.SphereGeometry(2.2,7,5),bagM);
+    bag.scale.y=0.55; bag.position.set(fx+Math.cos(a2)*20,fy+1.6,fz+Math.sin(a2)*20); bag.castShadow=true; scene.add(bag);
+  }
+  function mrap(x,z,ry,col){ const g2=new THREE.Group();
+    const body=new THREE.Mesh(new THREE.BoxGeometry(6.5,2.2,3), new THREE.MeshStandardMaterial({color:col,roughness:0.7,metalness:0.2}));
+    body.position.y=1.8; body.castShadow=true; g2.add(body);
+    const top=new THREE.Mesh(new THREE.BoxGeometry(3.4,1.6,2.6), new THREE.MeshStandardMaterial({color:col,roughness:0.7}));
+    top.position.set(-0.4,3.6,0); top.castShadow=true; g2.add(top);
+    const wg=new THREE.CylinderGeometry(0.8,0.8,0.6,10); wg.rotateX(Math.PI/2);
+    const wm=new THREE.MeshStandardMaterial({color:0x1c1c1c,roughness:1});
+    for(const [wx,wz] of [[-2.2,-1.6],[2.2,-1.6],[-2.2,1.6],[2.2,1.6]]){
+      const w=new THREE.Mesh(wg,wm); w.position.set(wx,0.8,wz); g2.add(w); }
+    g2.position.set(x,groundY(x,z)+0.2,z); g2.rotation.y=ry; scene.add(g2);
+  }
+  mrap(fx-8,fz+8,0.5,0x4d5b3a); mrap(40-14,20+16,0.2,0x4d5b3a); mrap(-40,-30,1.1,0x5b3a2e);
+  function squad(x,z,blufor){ const m=new THREE.MeshStandardMaterial({color:blufor?0x3a6bd8:0xb03a2e,roughness:0.8});
+    for(let i=0;i<5;i++){ const s=new THREE.Mesh(new THREE.CapsuleGeometry(0.55,1.5,3,8),m);
+      const sx=x+(Math.random()*10-5), sz=z+(Math.random()*10-5);
+      s.position.set(sx,groundY(sx,sz)+1.5,sz); s.castShadow=true; scene.add(s); } }
+  squad(fx-14,fz-6,true); squad(40+10,20-14,true); squad(-20,60,false); squad(120,120,false);
+  const trig=new THREE.Mesh(new THREE.CylinderGeometry(50,50,14,28,1,true),
+    new THREE.MeshBasicMaterial({color:0xf472b6,transparent:true,opacity:0.22,side:THREE.DoubleSide,depthWrite:false}));
+  trig.position.set(40,groundY(40,20)+7,20); scene.add(trig);      // mission-editor trigger volume
+  const wpM=new THREE.MeshBasicMaterial({color:0xffb454});
+  const wpCurve=new THREE.CatmullRomCurve3([new THREE.Vector3(-190,0,-110),new THREE.Vector3(-70,0,-40),new THREE.Vector3(40,0,20),new THREE.Vector3(205,0,185)]);
+  for(let i=0;i<=6;i++){ const p=wpCurve.getPoint(i/6);
+    const s=new THREE.Mesh(new THREE.SphereGeometry(2.4,10,8),wpM);
+    s.position.set(p.x,groundY(p.x,p.z)+6,p.z); scene.add(s); }    // waypoint chain
+}
+
+// ---------- clouds: cheap billboard planes for overcast depth ----------
+{
+  const cm=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.5,depthWrite:false});
+  for(let i=0;i<26;i++){ const cl=new THREE.Mesh(new THREE.PlaneGeometry(120+Math.random()*160,30+Math.random()*30),cm);
+    cl.position.set((Math.random()*2-1)*900,170+Math.random()*90,(Math.random()*2-1)*900);
+    cl.rotation.y=Math.random()*6.28; scene.add(cl); }
+}
+
+// ---------- camera modes + flycam ----------
+let mode='cine', yaw=0.6, pitch=-0.35;
+const keys={};
+addEventListener('keydown',e=>keys[e.code]=true);
+addEventListener('keyup',e=>keys[e.code]=false);
+let dragging=false,lx=0,ly=0;
+canvas.addEventListener('pointerdown',e=>{dragging=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);});
+canvas.addEventListener('pointermove',e=>{ if(!dragging)return;
+  yaw-=(e.clientX-lx)*0.004; pitch-=(e.clientY-ly)*0.004;
+  pitch=Math.max(-1.4,Math.min(1.2,pitch)); lx=e.clientX; ly=e.clientY;
+  if(mode==='cine') mode='fly';
+});
+canvas.addEventListener('pointerup',()=>dragging=false);
+const cineBtn=document.getElementById('camCine'), flyBtn=document.getElementById('camFly'), mapBtn=document.getElementById('camMap');
+function setMode(m){ mode=m;
+  cineBtn.className=m==='cine'?'':'ghost'; flyBtn.className=m==='fly'?'':'ghost'; mapBtn.className=m==='map'?'':'ghost'; }
+cineBtn.onclick=()=>setMode('cine'); flyBtn.onclick=()=>setMode('fly'); mapBtn.onclick=()=>setMode('map');
+camera.position.set(-180,90,-140); camera.lookAt(40,10,20);
+const fpsEl=document.getElementById('wFps'), cntEl=document.getElementById('wCount');
+cntEl.textContent=(window.__treeCount||1300)+' trees • 17 buildings • 3 MRAP • 20 infantry • FOB • airfield';
+let t0=performance.now(), frames=0, ct=0;
+const clock=new THREE.Clock();
+function resize(){ const w=canvas.clientWidth||1080, h=canvas.clientHeight||520;
+  renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+addEventListener('resize',resize); resize();
+function tick(){
+  requestAnimationFrame(tick);
+  const dt=Math.min(clock.getDelta(),0.05), t=clock.elapsedTime;
+  if(mode==='cine'){ ct+=dt*0.045;                                   // slow drone orbit like 0:27 shot
+    camera.position.set(40+Math.cos(ct)*230, 85+Math.sin(ct*0.6)*18, 20+Math.sin(ct)*230);
+    camera.lookAt(40,12,20);
+  } else if(mode==='map'){
+    camera.position.set(40,560,20.1); camera.lookAt(40,0,20);
+  } else {
+    const sp=(keys.ShiftLeft||keys.ShiftRight)?90:28;
+    const f=new THREE.Vector3(-Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch));
+    const r=new THREE.Vector3(-f.z,0,f.x).normalize();
+    if(keys.KeyW)camera.position.addScaledVector(f,sp*dt);
+    if(keys.KeyS)camera.position.addScaledVector(f,-sp*dt);
+    if(keys.KeyA)camera.position.addScaledVector(r,-sp*dt);
+    if(keys.KeyD)camera.position.addScaledVector(r,sp*dt);
+    if(keys.KeyE||keys.KeyR)camera.position.y+=sp*dt;
+    if(keys.KeyQ||keys.KeyF)camera.position.y-=sp*dt;
+    camera.position.y=Math.max(camera.position.y,groundY(camera.position.x,camera.position.z)+1.7);
+    camera.rotation.set(0,0,0); camera.rotateY(yaw); camera.rotateX(pitch);
+  }
+  renderer.render(scene,camera);
+  frames++; const now=performance.now();
+  if(now-t0>500){ fpsEl.textContent=Math.round(frames*1000/(now-t0))+' fps (CPU)'; frames=0; t0=now; }
+}
+tick();
+say('world: live — Everon biome from ref 0AqXRgCLMVg@0:27 (pine forest edge + farmland + village + FOB). Cinematic orbiting; drag/WASD to take over.');
+} catch(err) { say('world: WebGL unavailable — ' + err.message + ' (needs WebGL; static doc still usable)'); }
+</script>
+</body>
+</html>
