@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alt Life — Open-World Engine Architecture</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="hero">
+  <p class="kicker">Alt Life &middot; Principal Engine Architecture Document</p>
+  <h1>Alt Life: Open-World Action-Crime Engine</h1>
+  <p class="sub">A BlackSpace-style rendering + physics + streaming architecture for a GTA-structured open world with Crimson Desert-class fidelity and environmental reactivity.</p>
+  <nav class="toc">
+    <a href="#play">▶ Play Alt Life</a>
+    <a href="#s1">1 · Rendering &amp; Lighting</a>
+    <a href="#s2">2 · Environmental Physics</a>
+    <a href="#s3">3 · Streaming &amp; Simulation</a>
+    <a href="#s4">4 · Starter Code</a>
+    <a href="#demo">Live Demos</a>
+  </nav>
+</header>
+
+<main>
+<section class="card game-card" id="play" aria-label="Playable prototype">
+  <h2>▶ Play · Alt Life: Neon District (playable prototype)</h2>
+  <p>Open-world action-crime slice across 5 districts — Downtown towers, Suburbs, Vinewood Hills forests, Harbor Industrial, Del Mar Beach. Steal cars (Sports, Taxi, Truck…), grab pistols, work 3 story jobs, dodge LSPD. <strong>WASD/arrows</strong> move &amp; drive · <strong>MOUSE + CLICK</strong> aim &amp; shoot on foot · <strong>E</strong> enter/exit car · <strong>SPACE</strong> handbrake/shove · <strong>SHIFT</strong> sprint · <strong>R</strong> reset · <strong>P</strong> pause. Full day cycle + weather (clear/clouds/rain/fog) — dawn mist, wet neon reflections, night streetlights.</p>
+  <div class="game-hud">
+    <span class="pill" id="hudCash">$0</span>
+    <span class="pill stars" id="hudStars">clean</span>
+    <span class="pill" id="hudGun">fists</span>
+    <span class="pill" id="hudClock">09:30 day</span>
+    <span class="pill" id="hudSpeed">foot</span>
+    <span class="pill dim" id="hudMission">0 delivered</span>
+  </div>
+  <div class="game-wrap">
+    <canvas id="gameCanvas" width="960" height="600" tabindex="0" aria-label="Alt Life playable city"></canvas>
+    <div class="game-side">
+      <canvas id="miniMap" width="200" height="200" aria-label="Minimap"></canvas>
+      <div class="game-btns">
+        <button id="gamePause" type="button">Pause (P)</button>
+        <button id="gameReset" type="button">Reset (R)</button>
+      </div>
+      <p class="muted small">Sectors stream around you (LOD: near windows, far imposters). Wind bends trees and pushes mist — cars carve tunnels through it.</p>
+      <div class="touch" aria-label="Touch controls">
+        <div class="touch-row">
+          <button id="btnUp" type="button">▲</button>
+        </div>
+        <div class="touch-row">
+          <button id="btnLeft" type="button">◀</button>
+          <button id="btnDown" type="button">▼</button>
+          <button id="btnRight" type="button">▶</button>
+        </div>
+        <div class="touch-row">
+          <button id="btnGo" type="button">E</button>
+          <button id="btnBrake" type="button">SPACE</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="muted" id="hudMsg">Loading district…</p>
+</section>
+<section class="card benchmarks" aria-label="Design benchmarks">
+  <h2>Visual &amp; Structural Design Benchmarks</h2>
+  <ul>
+    <li>Reference Video 1: <a href="https://www.youtube.com/watch?v=rHnNIbz8Ia0">https://www.youtube.com/watch?v=rHnNIbz8Ia0</a> — target look: dynamic action choreography, dense reactive environments.</li>
+    <li>Reference Video 2: <a href="https://www.youtube.com/watch?v=xv3wFGGeIsI&amp;t=1968s">https://www.youtube.com/watch?v=xv3wFGGeIsI&amp;t=1968s</a> (3D Game, Desktop) — target look: next-generation lighting, atmospherics, material response.</li>
+    <li>Structural model: GTA-series open-world layout (urban sectors, traffic/pedestrian graphs, mission scripting) rendered through a Pearl Abyss BlackSpace-class pipeline (fully dynamic sun/moon, no static bakes).</li>
+  </ul>
+</section>
+
+<section class="card" id="s1">
+  <h2>Section 1 · Rendering Pipeline &amp; Lighting Architecture (BlackSpace-Style)</h2>
+  <p>Non-goals: no lightmap bakes, no screen-space-only reflections. Every light transport path below is evaluated or invalidated at runtime so time-of-day, weather, and destruction stay consistent.</p>
+
+  <h3>1.1 Global Illumination — Surfel Radiance Cache + SDF fallback</h3>
+  <p>Primary GI is a <strong>world-space surfel radiance cache</strong>: surfels spawned from the G-buffer (position, normal, albedo) at ~1/4 resolution, each storing irradiance + mean normal + validity radius. Surfels live in a spatial hash grid (cell ≈ 0.5&nbsp;m near-field, coarser far-field), accumulate multi-bounce diffuse via temporal injection, and are sampled per-pixel with bilateral weighting. A coarse SDF/volume probe grid backs regions with no surfel coverage (sky, far interiors).</p>
+  <pre class="ascii">Frame pipeline (per frame, async compute where noted)
+┌──────────┐  ┌──────────────┐  ┌────────────────┐  ┌──────────────┐
+│ G-Buffer │─▶│Surfel spawn/ │─▶│Irradiance      │─▶│Per-pixel     │
+│ 1/4 res  │  │invalidate    │  │inject+temporal │  │gather+bilat. │
+└──────────┘  └──────────────┘  └────────────────┘  └──────────────┘
+                     │ sun/moon dir │ sky SH │ interior bounce (2-3 taps)
+                     ▼              ▼        ▼
+              ┌──────────────────────────────────┐
+              │ SDF probe grid (fallback/sky)    │
+              └──────────────────────────────────┘</pre>
+  <ul>
+    <li><strong>Dynamic sun/moon:</strong> directional radiance re-injected every frame; surfel validity includes an angular term so a rotating sun invalidates stale surfels in O(changed) rather than full flush.</li>
+    <li><strong>Multi-bounce interiors:</strong> 2 injection bounces at half rate (every 2nd frame, checkerboarded) + 3rd bounce approximated from the SDF probe grid. Cost ≈ 1.2–1.8&nbsp;ms @1440p on current-gen GPU.</li>
+    <li><strong>Math:</strong> outgoing diffuse <code>L_o = (ρ/π) · Σ_k w_k · E_k</code>, weights <code>w_k = max(0, n·n_k) · falloff(|p−p_k|/r_k) · validity_k</code>, normalized over the surviving kernel.</li>
+  </ul>
+
+  <h3>1.2 Hybrid Ray-Tracing &amp; Reflections</h3>
+  <p>Reflections resolve in three tiers, chosen per-pixel by roughness and distance — this removes SSR disocclusion holes while bounding BVH cost:</p>
+  <ol>
+    <li><strong>Near field (0–150&nbsp;m):</strong> hardware BVH ray trace (DXR/Vulkan RT) for meshes + skinned characters, one bounce, importance-sampled by GGX lobe.</li>
+    <li><strong>Far field (&gt;150&nbsp;m) + water:</strong> analytic SDF ray march against the global distance field (city SDF streamed with sectors); water adds a Gerstner-normal perturbation before marching.</li>
+    <li><strong>Rough/glossy:</strong> prefiltered surfel/SDF radiance replaces explicit rays above roughness ≈ 0.35 (split-sum style).</li>
+  </ol>
+  <pre class="ascii">roughness ──▶ sharp? ──yes──▶ dist&lt;150m? ──yes──▶ BVH trace (1 bounce)
+     │                       │                    └─no──▶ SDF march
+     └─no (rough)──▶ surfel/SDF prefiltered sample (no ray)</pre>
+
+  <h3>1.3 Atmospherics &amp; Volumetrics</h3>
+  <p>Physically based sky: Preetham/Hosek-style analytic core upgraded with per-frame sun/moon luminance integration (extraterrestrial illuminance × transmittance), photon mean-free-path from a height-graded extinction table, and a 3D froxel fog volume (e.g. 160×90×64 over the view frustum) for fog, morning mist, muzzle smoke, and dust. Mist density is advected by the same wind field used for foliage (§2) and <strong>displaced by entity capsules</strong>: each active character/vehicle writes a short-lived velocity splat into the fog volume (decaying over ~1.5&nbsp;s), so running through mist parts it. Temporal reprojection + bilateral upsample keep volumetrics ≈ 1&nbsp;ms.</p>
+</section>
+
+<section class="card" id="s2">
+  <h2>Section 2 · Environmental Physics &amp; Dynamic Material Interaction</h2>
+
+  <h3>2.1 Wind &amp; Foliage Simulation</h3>
+  <p>One authoritative <strong>procedural wind field</strong> <code>W(p,t)</code> sampled on CPU (physics/AI/audio) and GPU (vertex shaders) from identical constants: 3 layered noises (synoptic gust ~100&nbsp;m wavelength, street-canyon turbulence ~10&nbsp;m, leaf flutter ~1&nbsp;m) + gust fronts advected along a prevailing direction + occlusion masks from buildings. Vegetation bends in the vertex shader as <code>offset = W(p,t) · heightWeight · flexibility</code>; forests beyond ~300&nbsp;m swap to camera-facing imposters that sample the same field per-instance so the canopy keeps moving at distance. Urban props (awnings, flags, papers) sample the street-canyon layer. See the <a href="#s4">WindManager starter code</a> for the exact CPU/GPU contract.</p>
+
+  <h3>2.2 Destruction &amp; Cloth Physics</h3>
+  <p>A modular component model keeps cloth, fracture, and particles on separate budgets but one job graph:</p>
+  <ul>
+    <li><strong>Cloth (clothing, vehicle covers, awnings):</strong> PBD/XPBD solver, 2–4 substeps, distance + bending constraints; characters run reduced particle sets (300–800) with skinned kinematic pins; wind field feeds external forces directly.</li>
+    <li><strong>Shatterable glass:</strong> pre-authored Voronoi fracture patterns; on impact, shards become rigid bodies with a 3–5&nbsp;s lifetime, then demote to GPU-only debris.</li>
+    <li><strong>Dynamic debris &amp; reactive particles:</strong> pooled rigid-body debris (cap ~512 active) + GPU particle fields (sparks, dust, glass glints) parameterized by impact energy and surface material ID from the G-buffer.</li>
+  </ul>
+  <pre class="ascii">Impact event ─▶ material table ─┬─▶ cloth impulse (if fabric)
+                                 ├─▶ fracture pattern (if glass/brittle)
+                                 └─▶ debris pool + particle burst (energy-scaled)</pre>
+</section>
+
+<section class="card" id="s3">
+  <h2>Section 3 · Open-World Streaming &amp; Vehicle/Pedestrian Simulation (GTA-Style)</h2>
+
+  <h3>3.1 Streaming &amp; LOD Framework</h3>
+  <p>World is tiled into <strong>sectors (~128&nbsp;m)</strong> with ring priorities around the camera + predicted movement vector. A dedicated streaming thread pool (I/O + decompress + GPU upload queues) pages geometry, SDF bricks, traffic splines, and pedestrian nav nodes. LOD policy: hero meshes near, proxy/imposter mid, SDF-only far. Hitch guards: frame-time-budgeted uploads, predictive prefetch along velocity, and a fallback low-LOD hold when I/O stalls — never a blocking load on the game thread.</p>
+  <pre class="ascii">Game thread: camera+velocity ─▶ priority rings ─▶ request queue
+Streaming threads: I/O ─▶ decompress ─▶ GPU upload (budgeted/frame)
+GPU: sector resident? ─yes─▶ draw LOD(n)   ─no─▶ hold coarse LOD + prefetch</pre>
+
+  <h3>3.2 Vehicle Physics Bridge</h3>
+  <p>Arcade-credible but telemetry-driven handling:</p>
+  <ul>
+    <li><strong>Contact:</strong> raycast wheel-ground model (4–6 rays/vehicle) returning compression, surface normal, surface material.</li>
+    <li><strong>Suspension:</strong> spring-damper per corner with telemetry (travel, load, bottoming events) feeding audio + camera shake + damage.</li>
+    <li><strong>Tires:</strong> Pacejka-lite friction ellipse keyed by surface coefficient (asphalt/wet/dirt/sidewalk) + load sensitivity + slip angle; dynamic center-of-mass shifts with passengers, cargo, and fuel.</li>
+    <li><strong>Bridge:</strong> physics core steps at fixed 120&nbsp;Hz, render interpolation at display rate; traffic AI consumes the same handling interface with simplified inputs so ambient cars behave like the player car.</li>
+  </ul>
+
+  <h3>3.3 Pedestrian / Traffic Simulation</h3>
+  <p>Pedestrian AI nodes and traffic splines stream with sectors; LOD'd crowd (full behavior near, flow-field far). Time-sliced updates (e.g. 1/4 of agents per frame) with interest-based priority near missions, combat, or the camera.</p>
+</section>
+
+<section class="card" id="s4">
+  <h2>Section 4 · Starter Code Implementation</h2>
+  <p>Two heavily commented, dependency-free C++17 snippets: the per-pixel surfel lighting evaluator and the wind/foliage manager whose constants must match the vertex shader. Both are structured for a multi-threaded game loop (job-system friendly, no hidden allocations in the hot path).</p>
+
+  <h3>4.1 Surfel Radiance Cache — Real-Time Lighting Evaluator</h3>
+  <pre><code>// SurfelLighting.h — BlackSpace-style dynamic GI evaluator (C++17, no deps).
+// Contract: surfels are maintained by an async compute/job pass; this
+// evaluates per-pixel diffuse bounce under shifting sun/moon without bakes.
+#pragma once
+#include &lt;cstdint&gt;
+#include &lt;cmath&gt;
+
+struct Vec3 { float x, y, z; };
+inline Vec3 operator+(Vec3 a, Vec3 b){return{a.x+b.x,a.y+b.y,a.z+b.z};}
+inline Vec3 operator-(Vec3 a, Vec3 b){return{a.x-b.x,a.y-b.y,a.z-b.z};}
+inline Vec3 operator*(Vec3 a, float s){return{a.x*s,a.y*s,a.z*s};}
+inline float Dot(Vec3 a, Vec3 b){return a.x*b.x+a.y*b.y+a.z*b.z;}
+inline float Length(Vec3 v){return std::sqrt(Dot(v,v));}
+
+// One cached bounce sample in world space.
+struct Surfel {
+    Vec3  position;    // world-space anchor
+    Vec3  normal;      // geometric mean normal of contributing pixels
+    Vec3  irradiance;  // multi-bounce diffuse irradiance E (lux-like)
+    float radius;      // validity radius (m); grows in flat regions
+    float validity;    // [0,1] temporal confidence; sun motion decays it
+    uint32_t lastTouchFrame;
+};
+
+// Time-of-day lighting state, refreshed once per frame on the game thread.
+struct DayPhase {
+    Vec3  sunDir;        // normalized, points TOWARD the sun
+    Vec3  sunColor;      // sun radiance (includes elevation dimming)
+    Vec3  moonDir;
+    Vec3  moonColor;     // ~0 at day; dominates at night
+    Vec3  skyAmbient;    // SDF-probe fallback ambient
+    float sunAngularChange; // radians since last frame (drives invalidation)
+};
+
+// --- Tuning ---------------------------------------------------------------
+constexpr int   kGatherRays   = 8;    // surfels sampled per pixel
+constexpr float kBaseRadius   = 0.6f; // m, near-field surfel spacing
+constexpr float kMaxRadius    = 3.0f; // m, far/flat-region cap
+constexpr float kAngleWeight  = 2.0f; // normal-similarity sharpness
+
+// Bilateral kernel: normal agreement x distance falloff x confidence.
+inline float SurfelWeight(const Vec3&amp; p, const Vec3&amp; n,
+                          const Surfel&amp; s) {
+    Vec3  d    = p - s.position;
+    float dist = Length(d);
+    if (dist &gt; s.radius * 2.0f || s.validity &lt;= 0.0f) return 0.0f;
+    float nAlign = Dot(n, s.normal);
+    if (nAlign &lt;= 0.0f) return 0.0f;              // backface: no bounce
+    float falloff = 1.0f - dist / (s.radius * 2.0f);
+    return std::pow(nAlign, kAngleWeight) * falloff * falloff * s.validity;
+}
+
+// Per-pixel diffuse bounce: L_o = (rho/pi) * E_gathered.
+// `fetch(i)` maps gather tap i -&gt; surfel (hash-grid lookup in real engine;
+// a flat ring buffer here keeps the snippet dependency-free).
+// Thread-safety: read-only over surfels; run one call per pixel in jobs.
+template &lt;typename FetchFn&gt;
+Vec3 EvaluateSurfelBounce(const Vec3&amp; albedo, const Vec3&amp; fragPos,
+                          const Vec3&amp; fragNormal, FetchFn&amp;&amp; fetch) {
+    Vec3  acc{0, 0, 0};
+    float wSum = 0.0f;
+    for (int i = 0; i &lt; kGatherRays; ++i) {
+        const Surfel&amp; s = fetch(i);
+        float w = SurfelWeight(fragPos, fragNormal, s);
+        acc  = acc + s.irradiance * w;
+        wSum += w;
+    }
+    if (wSum &lt; 1e-4f) return {0, 0, 0};           // caller adds SDF fallback
+    Vec3 e = acc * (1.0f / wSum);                 // normalized irradiance
+    constexpr float kInvPi = 0.3183099f;
+    return {albedo.x * e.x * kInvPi,               // Lambert: rho/pi * E
+            albedo.y * e.y * kInvPi,
+            albedo.z * e.z * kInvPi};
+}
+
+// Per-frame maintenance (jobified over surfel tiles): decay surfels the
+// moving sun/moon invalidated, so time-of-day shifts cost O(changed).
+inline void InvalidateForTimeOfDay(Surfel* surfels, int count,
+                                   const DayPhase&amp; phase, uint32_t frame) {
+    // Wider sun swing =&gt; harsher confidence cut. Moon uses same path at night.
+    float cut = 1.0f - fminf(phase.sunAngularChange * 8.0f, 0.9f);
+    for (int i = 0; i &lt; count; ++i) {
+        surfels[i].validity *= cut;
+        surfels[i].lastTouchFrame = frame;
+    }
+}</code></pre>
+
+  <h3>4.2 Procedural Wind &amp; Foliage Interaction Manager</h3>
+  <pre><code>// WindManager.h — one wind field for CPU + GPU (C++17, no deps).
+// The GLSL/HLSL vertex snippet below MUST use the same constants, or
+// foliage will disagree with physics/audio about wind direction.
+#pragma once
+#include &lt;cmath&gt;
+
+struct Vec3w { float x, y, z; };
+
+struct WindParams {
+    Vec3w prevailingDir = {0.8f, 0.0f, 0.6f}; // normalized XZ wind rose dir
+    float gustSpeed     = 6.0f;   // m/s advection of gust fronts
+    float gustStrength  = 2.2f;   // m/s peak gust amplitude
+    float turbulence    = 0.8f;   // street-canyon layer gain
+    float flutter       = 0.35f;  // leaf-scale high-frequency gain
+    float time          = 0.0f;   // seconds, advanced once per frame
+};
+
+// Cheap deterministic value-noise stand-ins (hash-based, no tables, so the
+// GPU copy stays bit-similar). Replace with your noise LUT if available.
+inline float Hash1(float n){ return fmodf(sinf(n * 127.1f) * 43758.5453f, 1.0f); }
+inline float VNoise(float x){
+    float i = floorf(x), f = x - i;
+    float u = f * f * (3.0f - 2.0f * f);
+    return Hash1(i) * (1.0f - u) + Hash1(i + 1.0f) * u; // [0,1)
+}
+
+class WindManager {
+public:
+    explicit WindManager(const WindParams&amp; p = {}) : params_(p) {}
+
+    // Advance once per frame on the game thread (NOT per job).
+    void Update(float dt) { params_.time += dt; }
+
+    // Sample the full spatial wind vector at world position p (m/s).
+    // Job-safe: reads params_ atomically-refreshed per frame; no writes.
+    Vec3w Sample(float px, float py, float pz) const {
+        const float t = params_.time;
+        // Layer 1: synoptic gust front (~100 m), advected with prevailing dir.
+        float front = VNoise((px * params_.prevailingDir.x
+                            + pz * params_.prevailingDir.z) * 0.01f
+                            - t * params_.gustSpeed * 0.02f);
+        float gust = (front - 0.5f) * 2.0f * params_.gustStrength;
+        // Layer 2: street-canyon turbulence (~10 m).
+        float turb = (VNoise((px + pz) * 0.1f + t * 0.7f) - 0.5f)
+                   * 2.0f * params_.turbulence;
+        // Layer 3: leaf flutter (~1 m, height-graded by py in shader).
+        float flut = (VNoise((px * 3.1f + py * 1.7f + pz * 2.3f) + t * 3.0f)
+                   - 0.5f) * 2.0f * params_.flutter;
+        float s = 1.0f + gust + turb;             // bulk flow multiplier
+        return {params_.prevailingDir.x * s + flut,
+                flut * 0.4f,                      // slight vertical lift
+                params_.prevailingDir.z * s - flut};
+    }
+
+    const WindParams&amp; params() const { return params_; }
+
+private:
+    WindParams params_;
+};
+
+/* --- GPU twin (GLSL): paste into the foliage vertex shader ---------------
+uniform vec3 uWindDir;   // = prevailingDir (normalized)
+uniform float uTime;     // = WindManager time
+uniform float uGust;     // = gustStrength
+uniform float uTurb;     // = turbulence
+uniform float uFlutter;  // = flutter
+
+vec3 windSample(vec3 worldPos) {
+    float front = fract(sin(dot(vec2(
+        (worldPos.x * uWindDir.x + worldPos.z * uWindDir.z) * 0.01
+        - uTime * 0.12, 1.0), vec2(127.1, 311.7)) * 43758.5453);
+    float s = 1.0 + (front - 0.5) * 2.0 * uGust
+                + (fract(sin(dot(vec2((worldPos.x + worldPos.z) * 0.1
+        + uTime * 0.7, 1.0), vec2(127.1, 311.7)) * 43758.5453)) - 0.5)
+        * 2.0 * uTurb;
+    return vec3(uWindDir.x * s, 0.0, uWindDir.z * s);
+}
+// usage: transformed += windSample(worldPos)
+//        * pow(uv.y, 1.5)   // heightWeight: roots pinned, tips free
+//        * uFlexibility;    // per-species stiffness
+// Distant imposters sample windSample() once per instance on the CPU and
+// pass it as instance data, so the whole forest breathes in phase.
+-------------------------------------------------------------------------- */</code></pre>
+</section>
+
+<section class="card" id="demo">
+  <h2>Live Demos · Surfel GI + Wind Field</h2>
+  <p>Runnable mirrors of the C++ headers in <code>Engine/</code>. Same bilateral surfel kernel and same 3-layer wind field, visualized on canvas.</p>
+  <h3>Surfel bounce vs. sun angle (top-down room)</h3>
+  <div class="controls">
+    <label for="sunSlider">Sun angle <span id="sunVal">45°</span></label>
+    <input id="sunSlider" type="range" min="0" max="360" step="1" value="45">
+  </div>
+  <canvas id="giCanvas" width="560" height="360"></canvas>
+  <h3>Procedural wind + foliage (gust front + turbulence + flutter)</h3>
+  <div class="controls">
+    <label for="gustSlider">Gust strength <span id="gustVal">2.2 m/s</span></label>
+    <input id="gustSlider" type="range" min="0" max="6" step="0.1" value="2.2">
+  </div>
+  <canvas id="windCanvas" width="560" height="300"></canvas>
+  <p class="muted">C++ sources: <code>Engine/Renderer/GI/SurfelLighting.h</code> · <code>Engine/World/WindManager.h</code> · <code>Engine/Physics/VehiclePhysics.h</code> · <code>Engine/World/SectorStreaming.h</code> · <code>Engine/Shaders/WindFoliage.hlsl</code></p>
+</section>
+</main>
+
+<footer>
+  <p>Alt Life engine architecture · static build · benchmarks above define the visual bar for every subsystem.</p>
+</footer>
+<script src="app.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
