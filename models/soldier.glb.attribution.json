@@ -1,0 +1,117 @@
+{
+  "uid": "afb42573fa5f4fd2af09c9929d9ccd93",
+  "name": "PS1/Low Poly Night Vision Special Forces Soldier",
+  "author": "Jellypack",
+  "authorUrl": "https://sketchfab.com/jellypack",
+  "license": "CC Attribution",
+  "licenseUrl": null,
+  "modelUrl": "https://sketchfab.com/3d-models/none-afb42573fa5f4fd2af09c9929d9ccd93",
+  "thumbnailUrl": "https://media.sketchfab.com/models/afb42573fa5f4fd2af09c9929d9ccd93/thumbnails/e77bc96ff6fd47b8a681a9c2c1abf71e/5783c4c0201c4a34a7bb81722a57c7ae.jpeg",
+  "glbBytes": 325808,
+  "faceCount": 1010,
+  "vertexCount": 1282,
+  "textureCount": 2,
+  "textureMaxResolution": 256,
+  "animationCount": 9,
+  "animations": [
+    {
+      "uid": "6f245870ba114c6aae2e0f2757254552",
+      "name": "SMGpose3",
+      "url": "https://media.sketchfab.com/models/afb42573fa5f4fd2af09c9929d9ccd93/27599cf2f585483b867e519892e597c3/animations/6f245870ba114c6aae2e0f2757254552.bin.gz",
+      "size": 772,
+      "duration": 0.0,
+      "isLoop": false,
+      "isEnabled": true,
+      "createdAt": "2026-04-15T12:48:14.919101",
+      "updatedAt": "2026-04-15T15:46:09.309824"
+    },
+    {
+      "uid": "b77e498be2ff475e99b82a2957f4137f",
+      "name": "Default",
+      "url": "https://media.sketchfab.com/models/afb42573fa5f4fd2af09c9929d9ccd93/27599cf2f585483b867e519892e597c3/animations/b77e498be2ff475e99b82a2957f4137f.bin.gz",
+      "size": 184,
+      "duration": 0.0,
+      "isLoop": false,
+      "isEnabled": true,
+      "createdAt": "2026-04-15T12:48:14.888035",
+      "updatedAt": "2026-04-15T15:46:09.317943"
+    },
+    {
+      "uid": "92f6c75d493b4f5cbb527d9feb5f9741",
+      "name": "SMGwalk",
+      "url": "https://media.sketchfab.com/models/afb42573fa5f4fd2af09c9929d9ccd93/27599cf2f585483b867e519892e597c3/animations/92f6c75d493b4f5cbb527d9feb5f9741.bin.gz",
+      "size": 7712,
+      "duration": 1.0,
+      "isLoop": false,
+      "isEnabled": true,
+      "createdAt": "2026-04-15T12:48:14.926748",
+      "updatedAt": "2026-04-15T15:46:09.361612"
+    },
+    {
+      "uid": "49d9a62a942a4c69820ad248f9b62613",
+      "name": "SMGpose",
+      "url": "https://media.sketchfab.com/models/afb42573fa5f4fd2af09c9929d9ccd93/27599cf2f585483b867e519892e597c3/animations/49d9a62a942a4c69820ad248f9b62613.bin.gz",
+      "size": 460,
+      "duration": 0.0,
+      "isLoop": false,
+      "isEnabled": true,
+      "createdAt": "2026-04-15T12:48:14.912403",
+      "updatedAt": "2026-04-15T15:46:09.315142"
+    },
+    {
+      "uid": "0de0a2aae91e4f3e856d947a4e1d8c47",
+      "name": "SMGpose2",
+      "url": "https://media.sketchfab.com/models/afb42573fa5f4fd2af09c9929d9ccd93/27599cf2f585483b867e519892e597c3/animations/0de0a2aae91e4f3e856d947a4e1d8c47.bin.gz",
+      "size": 580,
+      "duration": 0.0,
+      "isLoop": false,
+      "isEnabled": true,
+      "createdAt": "2026-04-15T12:48:14.915944",
+      "updatedAt": "2026-04-15T15:46:09.312122"
+    },
+    {
+      "uid": "8f9cf75616644dfeaa82b6322498b0cd",
+      "name": "SHOTGUNpose3",
+      "url": "https://media.sketchfab.com/models/afb42573fa5f4fd2af09c9929d9ccd93/27599cf2f585483b867e519892e597c3/animations/8f9cf75616644dfeaa82b6322498b0cd.bin.gz",
+      "size": 808,
+      "duration": 0.0,
+      "isLoop": false,
+      "isEnabled": true,
+      "createdAt": "2026-04-15T12:48:14.900727",
+      "updatedAt": "2026-04-15T15:46:09.369393"
+    },
+    {
+      "uid": "d8d9d1eccfd34943a10f9e70fda10f61",
+      "name": "SHOTGUNpose2",
+      "url": "https://media.sketchfab.com/models/afb42573fa5f4fd2af09c9929d9ccd93/27599cf2f585483b867e519892e597c3/animations/d8d9d1eccfd34943a10f9e70fda10f61.bin.gz",
+      "size": 648,
+      "duration": 0.0,
+      "isLoop": false,
+      "isEnabled": true,
+      "createdAt": "2026-04-15T12:48:14.897198",
+      "updatedAt": "2026-04-15T15:46:09.434314"
+    },
+    {
+      "uid": "f28d6dfb88fe45c6835f77d5cec0db9d",
+      "name": "SHOTGUNpose",
+      "url": "https://media.sketchfab.com/models/afb42573fa5f4fd2af09c9929d9ccd93/27599cf2f585483b867e519892e597c3/animations/f28d6dfb88fe45c6835f77d5cec0db9d.bin.gz",
+      "size": 496,
+      "duration": 0.0,
+      "isLoop": false,
+      "isEnabled": true,
+      "createdAt": "2026-04-15T12:48:14.893231",
+      "updatedAt": "2026-04-15T15:46:09.319771"
+    },
+    {
+      "uid": "7b6d5bbe0e8c430095e8d107e2e32e66",
+      "name": "SHOTGUNwalk",
+      "url": "https://media.sketchfab.com/models/afb42573fa5f4fd2af09c9929d9ccd93/27599cf2f585483b867e519892e597c3/animations/7b6d5bbe0e8c430095e8d107e2e32e66.bin.gz",
+      "size": 8080,
+      "duration": 1.0,
+      "isLoop": false,
+      "isEnabled": true,
+      "createdAt": "2026-04-15T12:48:14.907741",
+      "updatedAt": "2026-04-15T15:46:09.297448"
+    }
+  ]
+}
