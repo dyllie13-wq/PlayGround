@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a1220'/%3E%3Ctext x='16' y='23' font-size='18' text-anchor='middle' fill='%23ffcf6e'%3E%E2%9B%A8%3C/text%3E%3C/svg%3E" />
+  <title>Call to Defense — Modern Total Warfare</title>
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- ============ MAIN MENU ============ -->
+  <div id="menu" class="screen">
+    <div class="menu-bg"></div>
+    <div class="menu-panel">
+      <div class="kicker">MODERN-ERA GRAND STRATEGY × REAL-TIME TACTICS</div>
+      <h1>CALL TO <span>DEFENSE</span></h1>
+      <p class="tagline">Command coalitions on a living 3D globe. Drop into high-lethality combined-arms battles —
+        drones, layered air defense, electronic warfare, precision fires and urban clearance.</p>
+      <div class="menu-buttons">
+        <button id="btn-new" class="btn primary">▶ New Campaign</button>
+        <button id="btn-continue" class="btn" disabled>Continue (in-session)</button>
+        <button id="btn-how" class="btn">Field Manual</button>
+        <button id="btn-credits" class="btn">Credits</button>
+      </div>
+      <div class="menu-foot">Desktop 3D · Three.js · Best played with mouse + keyboard</div>
+    </div>
+  </div>
+
+  <!-- ============ TOP BAR ============ -->
+  <div id="topbar" class="hidden">
+    <div class="tb-title">CALL TO <span>DEFENSE</span></div>
+    <div class="tb-res">
+      <span title="Defense budget">💰 <b id="r-budget">0</b></span>
+      <span title="Fuel & supplies">🛢 <b id="r-supply">0</b></span>
+      <span title="Precision munitions">🚀 <b id="r-mun">0</b></span>
+      <span title="Intelligence">🛰 <b id="r-intel">0</b></span>
+      <span title="Turn">📅 Turn <b id="r-turn">1</b></span>
+    </div>
+    <div class="tb-esc">
+      <label>ESCALATION</label>
+      <div class="esc-bar"><div id="esc-fill"></div></div>
+      <b id="esc-val">0%</b>
+    </div>
+    <button id="btn-mute" class="btn small">🔊</button>
+    <button id="btn-quit" class="btn small">✕</button>
+  </div>
+
+  <!-- ============ CAMPAIGN UI ============ -->
+  <div id="campaign-ui" class="hidden">
+    <div id="region-panel" class="panel">
+      <h2 id="rg-name">Select a region</h2>
+      <div id="rg-body"><p class="dim">Click a glowing marker on the globe. Drag to rotate, wheel to zoom.</p></div>
+      <div id="rg-actions"></div>
+    </div>
+    <div id="strat-panel" class="panel">
+      <h2>Grand Strategy</h2>
+      <div class="strat-row">
+        <button id="a-recruit" class="btn small">＋ Battlegroup <i>$400</i></button>
+        <button id="a-industry" class="btn small">🏭 Industry <i>$300</i></button>
+      </div>
+      <div class="strat-row">
+        <button id="a-cyber" class="btn small">💻 Cyberattack <i>$200</i></button>
+        <button id="a-proxy" class="btn small">🥷 Fund Proxy <i>$150</i></button>
+      </div>
+      <div class="strat-row">
+        <button id="a-disinfo" class="btn small">📡 Disinfo <i>$100</i></button>
+        <button id="a-satsweep" class="btn small">🛰 Sat Sweep <i>15 intel</i></button>
+      </div>
+      <h3>Your battlegroups</h3>
+      <div id="bg-list"></div>
+      <button id="btn-endturn" class="btn primary wide">End Turn ⏭</button>
+    </div>
+    <div id="war-log" class="panel"><h3>War Log</h3><div id="log-lines"></div></div>
+    <div id="objective-bar">Objective: control <b>7 of 10</b> regions · hold your capital · keep Escalation under 100%</div>
+  </div>
+
+  <!-- ============ BATTLE UI ============ -->
+  <div id="battle-ui" class="hidden">
+    <div id="phase-bar">
+      <div class="phase" data-ph="0">1 · RECON</div>
+      <div class="phase" data-ph="1">2 · SEAD &amp; SHAPING</div>
+      <div class="phase" data-ph="2">3 · ASSAULT</div>
+      <div class="phase" data-ph="3">4 · CLEARANCE</div>
+    </div>
+    <div id="battle-status">
+      <span>🔵 <b id="b-blue">0</b></span><span>🔴 <b id="b-red">0</b></span>
+      <span>🚀 <b id="b-mun">0</b></span><span>⏱ <b id="b-time">0:00</b></span>
+      <span id="b-zones">A ◯&nbsp;&nbsp;B ◯</span>
+    </div>
+    <div id="orders" class="panel">
+      <div class="ord-title">ORDERS <span id="sel-info" class="dim"></span></div>
+      <div class="ord-grid">
+        <button data-ord="move" class="btn small" title="Right-click also works">Move (R-click)</button>
+        <button data-ord="attackmove" class="btn small" title="Hotkey A">Attack-Move [A]</button>
+        <button data-ord="stop" class="btn small" title="Hotkey S">Halt [S]</button>
+        <button data-ord="smoke" class="btn small" title="Hotkey G">Smoke [G]</button>
+        <button data-ord="sead" class="btn small" title="Hotkey D">SEAD Strike [D]</button>
+        <button data-ord="mlrs" class="btn small" title="Hotkey M">MLRS Barrage [M]</button>
+        <button data-ord="loiter" class="btn small" title="Hotkey L">Loitering Hit [L]</button>
+      </div>
+      <div class="ord-row">
+        <button id="btn-tacview" class="btn small">🗺 NATO View [T]</button>
+        <button id="btn-speed" class="btn small">⏩ 1× [Space]</button>
+      </div>
+    </div>
+    <div id="unit-cards"></div>
+    <div id="pip"><div class="pip-label">● UAV-3 THERMAL FEED</div><div class="pip-scan"></div></div>
+    <div id="battle-hint" class="dim">Left-click / drag: select · Right-click: move / attack · Right-drag: rotate · Wheel: zoom · Arrows: pan</div>
+  </div>
+
+  <!-- ============ MODAL ============ -->
+  <div id="modal" class="hidden"><div id="modal-box"><h2 id="m-title"></h2><div id="m-body"></div><div id="m-btns"></div></div></div>
+  <div id="toast-wrap"></div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
